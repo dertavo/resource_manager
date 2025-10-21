@@ -949,8 +949,6 @@ e.dataTransfer.effectAllowed = 'move';
   };
 
 
-
-
   const handleDragOver = (e) => {
     e.preventDefault();
     const target = e.currentTarget;
@@ -965,11 +963,12 @@ e.dataTransfer.effectAllowed = 'move';
   const handleDrop = (e, shelfId, shelfCapacity) => {
   e.preventDefault();
 
-  setIsDraggable(false);
+  //setIsDraggable(false);
 
+  if(e.currentTarget){
+     e.target.classList.remove('border-blue-500', 'border-2');
+  }
 
-  const target = e.currentTarget;
-  target.classList.remove('border-blue-500', 'border-2');
   if (!draggedItem) return;
 
   const shelfIndex = shelves.findIndex(s => s.id === shelfId);
@@ -977,9 +976,11 @@ e.dataTransfer.effectAllowed = 'move';
   if (targetShelf.items.length >= shelfCapacity) {
     setMessage(`¡El estante ${shelfIndex + 1} está lleno!`);
     setDraggedItem(null);
+    setIsDraggable(false);
     return;
   }
   if (draggedItem.type === 'grouped-inventory') {
+ 
     const itemToMoveIndex = inventory.findIndex(item => item.productId === draggedItem.productId);
     if (itemToMoveIndex === -1) {
       setMessage('No hay más unidades de este producto disponibles en el inventario.');
@@ -1018,48 +1019,108 @@ e.dataTransfer.effectAllowed = 'move';
   }
   };
 
-  const handleDropToInventory = (e) => {
-
-
+const handleDropToInventory = (e) => {
     e.preventDefault();
 
-    console.log(draggedItem)
-    const target = e.currentTarget;
-    target.classList.remove('border-blue-500', 'border-2');
-    if (!draggedItem  || draggedItem.type !='shelf') return;
-  
-   const updatedShelves = shelves.map(s => {
-    const updatedItems = s.items.filter(item => item.uniqueId !== draggedItem.uniqueId);
-    return {
-      ...s,
-      items: updatedItems,
-      draggable: updatedItems.length === 0 // true si quedó vacío
-    };
-  });
+    // ===================================================
+    // 1. CORRECCIÓN MÓVIL/ESCRITORIO (TypeError: Cannot read properties of undefined (reading 'classList'))
+    // ===================================================
+    // Solo accedemos a e.currentTarget (escritorio) si está definido para evitar el error en móvil.
+    if (e.currentTarget) {
+        // La limpieza visual del drop zone de inventario para escritorio.
+        e.currentTarget.classList.remove('border-blue-500', 'border-2');
+    }
 
-   
+    if (!draggedItem) return;
 
+    // ===================================================
+    // 2. LÓGICA DE ACTUALIZACIÓN DE ESTANTES (Eliminar el ítem o estante)
+    // ===================================================
+    let itemToReturnToInventory;
+    let newShelves = shelves;
+    
+    // CASO A: Se arrastró un ESTANTE COMPLETO ('shelf')
+    if (draggedItem.type === 'shelf') {
+        // Si el tipo es 'shelf', asumimos que el estante completo se está moviendo al inventario/basurero,
+        // por lo que lo removemos de la lista de estantes.
+        newShelves = shelves.filter(s => s.uniqueId !== draggedItem.uniqueId);
+        
+        // El estante completo (incluyendo sus ítems) se convierte en el ítem a devolver (como una "caja").
+        itemToReturnToInventory = {
+            productId: draggedItem.productId,
+            name: draggedItem.name,
+            color: draggedItem.color,
+            qty: draggedItem.items.length > 0 ? draggedItem.items.length : 1, // Podrías devolver la cuenta de ítems
+            capacity: draggedItem.capacity,
+            uniqueId: draggedItem.uniqueId,
+            // Si quieres devolver los ítems individuales, necesitarías una lógica diferente
+        };
+        
+    } 
+    // CASO B: Se arrastró un ÍTEM INDIVIDUAL dentro de un estante ('item-in-shelf')
+    else if (draggedItem.type === 'item-in-shelf') {
+        // En este caso, draggedItem es el ShelfItem que se sacó del estante.
+        
+        // Actualizamos los estantes para remover solo ese ítem.
+        newShelves = shelves.map(s => {
+            const updatedItems = s.items.filter(item => item.uniqueId !== draggedItem.uniqueId);
+            return {
+                ...s,
+                items: updatedItems,
+                // Si la función handleDropToInventory es la de devolver al inventario de items
+                // el estante siempre debe ser arrastrable si queda vacío.
+                draggable: updatedItems.length === 0, 
+            };
+        });
 
-  // Paso 2: Filtra los estantes de esta nueva lista para eliminar los que quedaron vacíos
- const finalShelves = updatedShelves.filter(shelf => shelf.items.length > 0);
+        // El ítem individual se convierte en el ítem a devolver.
+        itemToReturnToInventory = {
+            productId: draggedItem.productId,
+            name: draggedItem.name,
+            color: draggedItem.color,
+            qty: 1,
+            capacity: draggedItem.capacity // capacity es opcional
+        };
+    } else {
+        // Si no es un estante ni un ítem-en-estante (e.g., es 'grouped-inventory'), no lo movemos aquí.
+        // O podrías tener lógica para mover items agrupados de vuelta a otro inventario.
+        return;
+    }
 
-  // Paso 3: Actualiza el estado una sola vez
-  setShelves(updatedShelves);
+    // ===================================================
+    // 3. ACTUALIZACIÓN DE ESTADO
+    // ===================================================
+    
+    // A. Actualizar la lista de estantes (con el estante/ítem removido)
+    // Aquí usamos 'newShelves', no 'finalShelves', que tenías definido incorrectamente.
+    setShelves(newShelves); 
 
-    setInventory(prevInventory => [...prevInventory, {
-      id: draggedItem.id,
-      name: draggedItem.name,
-      color: draggedItem.color,
-      productId: draggedItem.productId,
-      uniqueId: draggedItem.uniqueId,
-      qty: draggedItem.qty,
-      capacity : draggedItem.capacity
+    // B. Devolver el ítem al inventario. Lo consolidamos con el inventario existente.
+    if (itemToReturnToInventory) {
+        setInventory(prevInventory => {
+            const existingItemIndex = prevInventory.findIndex(
+                item => item.productId === itemToReturnToInventory.productId
+            );
 
-    }]);
-    setMessage('');
+            if (existingItemIndex !== -1) {
+                // Si ya existe, incrementa la cantidad
+                const newInventory = [...prevInventory];
+                newInventory[existingItemIndex] = {
+                    ...newInventory[existingItemIndex],
+                    qty: newInventory[existingItemIndex].qty + itemToReturnToInventory.qty
+                };
+                return newInventory;
+            } else {
+                // Si no existe, agrégalo al inventario
+                return [...prevInventory, itemToReturnToInventory];
+            }
+        });
+    }
+
+    // C. Limpieza final
+    setMessage('Elemento devuelto al inventario.');
     setDraggedItem(null);
-  };
-
+};
   const handleDropToTrash = (e) => {
     e.preventDefault();
     if (!draggedItem) return;
@@ -1428,9 +1489,9 @@ e.dataTransfer.effectAllowed = 'move';
             handleDropToInventory={handleDropToInventory}
             handleDropToTrash={handleDropToTrash}
             setMessage={setMessage}
+            setDraggedItem={setDraggedItem}
             draggedItem={draggedItem}
             isDraggable = {isDraggable}
-           
           />
         );
       case 'register':

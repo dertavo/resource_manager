@@ -40,3 +40,20 @@
 .read-the-docs {
   color: #888;
 }
+
+
+[data-drop-zone="true"] {
+  transition: background-color 0.2s, border-color 0.2s;
+  touch-action: none;
+}
+
+.dragging-mobile {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ghost-element {
+  will-change: transform;
+  touch-action: none;
+}
