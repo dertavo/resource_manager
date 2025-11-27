@@ -6,7 +6,7 @@ import ProductCardWithSelector from '../cards/ProductCardWithSelector';
 import ProductShop from '../components/ProductShop';
 import StationShop from '../components/StationShop';
 
-const BuyView = ({ products, handleAddToCartAll, stations }) => {
+const BuyView = ({ products, setProducts, handleAddToCartAll, stations }) => {
   const [productQuantities, setProductQuantities] = useState({});
 
   const [currentShop, setCurrentShop] = useState('products');
@@ -38,6 +38,7 @@ const BuyView = ({ products, handleAddToCartAll, stations }) => {
             return (
                 <ProductShop
                 products={products}
+                setProducts={setProducts}
                 handleAddToCartAll={handleAddToCartAll}
                 
                 />

@@ -458,7 +458,7 @@ const generateId = () => Math.random().toString(36).substring(2, 9);
 //                   </button>
 //                 </div>
 //               ))
-//             ) : (
+//             : (
 //               <p className="text-gray-500 text-center">No hay estaciones. ¡Crea una!</p>
 //             )}
 //           </div>
@@ -1217,7 +1217,12 @@ const handleDropToInventory = (e) => {
     const newId = generateId();
     const newColor = `hsl(${Math.random() * 360}, 70%, 80%)`;
     const product = { ...newProduct, id: newId, color: newColor };
-    setProducts(prevProducts => [...prevProducts, product]);
+    setProducts(prevProducts => {
+      const updatedProducts = [...prevProducts, product];
+      // Persistir inmediatamente en localStorage
+      localStorage.setItem('products', JSON.stringify(updatedProducts));
+      return updatedProducts;
+    });
     setMessage(`Producto "${product.name}" registrado con éxito con ${product.stock} unidades en stock.`);
   };
 
@@ -1500,6 +1505,7 @@ const handleDropToInventory = (e) => {
         return (
           <BuyView
             products={products}
+            setProducts={setProducts}
             handleAddToCartAll={handleAddToCartAll}
             stations={stations}
             cartItems={cartItems}
