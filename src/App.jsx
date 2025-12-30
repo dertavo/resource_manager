@@ -9,6 +9,9 @@ import StationsView from './views/StationsView';
 import WarehousesView from './views/WarehousesView';
 
 import StationDetailsModal from './views/StationDetailsModal';
+import CompanyView from './views/CompanyView';
+import WorkforceView from './views/WorkforceView';
+import PersonalPanel from './components/PersonalPanel';
 
 // Genera un ID único para cada elemento
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -810,6 +813,73 @@ const App = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStation, setSelectedStation] = useState(null);
+  // Nueva empresa y fuerza laboral
+  const [company, setCompany] = useState(() => {
+    try {
+      const stored = localStorage.getItem('company');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [workforce, setWorkforce] = useState(() => {
+    try {
+      const stored = localStorage.getItem('workforce');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [personalInventory, setPersonalInventory] = useState(() => {
+    try {
+      const stored = localStorage.getItem('personalInventory');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [actorTasks, setActorTasks] = useState(() => {
+    try {
+      const stored = localStorage.getItem('actorTasks');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [dailyBalance, setDailyBalance] = useState(() => {
+    try {
+      const stored = localStorage.getItem('dailyBalance');
+      return stored ? JSON.parse(stored) : { date: new Date().toISOString().split('T')[0], income: 0, expenses: 0, entries: [] };
+    } catch {
+      return { date: new Date().toISOString().split('T')[0], income: 0, expenses: 0, entries: [] };
+    }
+  });
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem('currentUser');
+      return stored ? stored : 'store';
+    } catch {
+      return 'store';
+    }
+  });
+  const [productsForSale, setProductsForSale] = useState(() => {
+    try {
+      const stored = localStorage.getItem('productsForSale');
+      return stored ? JSON.parse(stored) : { store: [], main: [] };
+    } catch {
+      return { store: [], main: [] };
+    }
+  });
+  const [isPersonalPanelVisible, setIsPersonalPanelVisible] = useState(() => {
+    try {
+      const stored = localStorage.getItem('isPersonalPanelVisible');
+      return stored ? JSON.parse(stored) : true;
+    } catch {
+      return true;
+    }
+  });
+  const [priceModalItem, setPriceModalItem] = useState(null);
+  const [priceInput, setPriceInput] = useState('');
 
   // Referencia para almacenar los temporizadores de las estaciones
   const stationTimersRef = useRef({});
@@ -834,6 +904,30 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('inventory', JSON.stringify(inventory));
   }, [inventory]);
+  useEffect(() => {
+    localStorage.setItem('company', JSON.stringify(company));
+  }, [company]);
+  useEffect(() => {
+    localStorage.setItem('workforce', JSON.stringify(workforce));
+  }, [workforce]);
+  useEffect(() => {
+    localStorage.setItem('personalInventory', JSON.stringify(personalInventory));
+  }, [personalInventory]);
+  useEffect(() => {
+    localStorage.setItem('actorTasks', JSON.stringify(actorTasks));
+  }, [actorTasks]);
+  useEffect(() => {
+    localStorage.setItem('dailyBalance', JSON.stringify(dailyBalance));
+  }, [dailyBalance]);
+  useEffect(() => {
+    localStorage.setItem('currentUser', currentUser);
+  }, [currentUser]);
+  useEffect(() => {
+    localStorage.setItem('productsForSale', JSON.stringify(productsForSale));
+  }, [productsForSale]);
+  useEffect(() => {
+    localStorage.setItem('isPersonalPanelVisible', JSON.stringify(isPersonalPanelVisible));
+  }, [isPersonalPanelVisible]);
 
   // Genera los estantes iniciales si no existen
   useEffect(() => {
@@ -859,6 +953,55 @@ const App = () => {
       warehouse.stations.forEach((station, stationIndex) => {
         if (station && station.status === 'processing' && !stationTimersRef.current[station.id]) {
           stationTimersRef.current[station.id] = setInterval(() => {
+            // Costos de labor y estados de actores (1 segundo = 1 hora simulada)
+            if (company) {
+              const assignedWorkerIds = station.assignedWorkerIds || [];
+              const assignedMachineIds = station.assignedMachineIds || [];
+              const actors = workforce.filter(a => assignedWorkerIds.includes(a.id) || assignedMachineIds.includes(a.id));
+              const hourlyTotal = actors.reduce((sum, a) => sum + (a.hourlyCost || 0), 0);
+              if (hourlyTotal > 0) {
+                setCompany(prev => {
+                  if (!prev) return prev;
+                  const entry = {
+                    id: generateId(),
+                    type: 'expense',
+                    amount: hourlyTotal,
+                    description: `Labor ${station.name}`,
+                    date: new Date().toISOString(),
+                  };
+                  return { ...prev, capital: (prev.capital || 0) - hourlyTotal, ledger: [...(prev.ledger || []), entry] };
+                });
+                // Actualizar balance diario
+                setDailyBalance(prev => {
+                  const entry = {
+                    id: generateId(),
+                    type: 'expense',
+                    amount: hourlyTotal,
+                    description: `Labor: ${station.name}`,
+                    timestamp: new Date().toISOString(),
+                  };
+                  return {
+                    ...prev,
+                    expenses: prev.expenses + hourlyTotal,
+                    entries: [...prev.entries, entry],
+                  };
+                });
+              }
+              if (actors.length > 0) {
+                setWorkforce(prev => prev.map(a => {
+                  if (assignedWorkerIds.includes(a.id)) {
+                    const fatigue = Math.min(100, (a.fatigue || 0) + 5);
+                    const hoursWorked = (a.hoursWorkedToday || 0) + 1;
+                    return { ...a, fatigue, hoursWorkedToday: hoursWorked, status: 'working' };
+                  }
+                  if (assignedMachineIds.includes(a.id)) {
+                    const maintenance = Math.min(100, (a.maintenanceNeed || 0) + 3);
+                    return { ...a, maintenanceNeed: maintenance, status: 'working' };
+                  }
+                  return a;
+                }));
+              }
+            }
             setWarehouses(prevWarehouses => {
               const newWarehouses = prevWarehouses.map(w => {
                 if (w.id === warehouse.id) {
@@ -897,7 +1040,7 @@ const App = () => {
       Object.values(stationTimersRef.current).forEach(clearInterval);
       stationTimersRef.current = {};
     };
-  }, [warehouses, inventory, products]);
+  }, [warehouses, inventory, products, company, workforce]);
 
   // Funciones principales de la aplicación
   const getAvailableItems = () => {
@@ -946,6 +1089,27 @@ if (item.items && item.items.length > 0) {
 setDraggedItem({ ...item, type, uniqueId });
 //console.log(item);
 e.dataTransfer.effectAllowed = 'move';
+  };
+
+  // Drag handlers for personal inventory
+  const handleDropToPersonalInventory = (e) => {
+    e.preventDefault();
+    if (!draggedItem || draggedItem.type !== 'grouped-inventory') return;
+
+    const itemInInventory = inventory.find(i => i.productId === draggedItem.productId);
+    if (!itemInInventory) return;
+
+    if (personalInventory.length >= 4) {
+      setMessage('Tu inventario personal está lleno (máx 4 items).');
+      setDraggedItem(null);
+      return;
+    }
+
+    // Remove from main inventory
+    setInventory(prev => prev.filter(i => i.productId !== draggedItem.productId));
+    // Add to personal inventory
+    addToPersonalInventory(itemInInventory);
+    setDraggedItem(null);
   };
 
 
@@ -1030,7 +1194,6 @@ const handleDropToInventory = (e) => {
         // La limpieza visual del drop zone de inventario para escritorio.
         e.currentTarget.classList.remove('border-blue-500', 'border-2');
     }
-
     if (!draggedItem) return;
 
     // ===================================================
@@ -1170,7 +1333,7 @@ const handleDropToInventory = (e) => {
         updatedWarehouses = updatedWarehouses.map(w => {
             if (w.id === warehouseId) {
                 const newStations = [...w.stations];
-                newStations[index] = { ...draggedItem, status: 'idle' };
+                newStations[index] = { ...draggedItem, status: 'idle', assignedWorkerIds: [], assignedMachineIds: [] };
                 return { ...w, stations: newStations };
             }
             return w;
@@ -1339,7 +1502,7 @@ const handleDropToInventory = (e) => {
     const updatedWarehouse = warehouses.find(w => w.id === warehouseId);
     const updatedStation = updatedWarehouse?.stations[stationIndex];
     if (updatedStation) {
-      setSelectedStation({ ...updatedStation, warehouseId, stationIndex });
+      setSelectedStation({ warehouseId, stationIndex });
       setIsModalOpen(true);
     }
   };
@@ -1347,6 +1510,11 @@ const handleDropToInventory = (e) => {
   const updateStationStatus = (warehouseId, stationIndex, newStatus) => {
     const station = warehouses.find(w => w.id === warehouseId)?.stations[stationIndex];
     if (newStatus === 'processing' && station) {
+      const hasAssignedActors = ((station.assignedWorkerIds && station.assignedWorkerIds.length > 0) || (station.assignedMachineIds && station.assignedMachineIds.length > 0));
+      if (!hasAssignedActors) {
+        setMessage('Asigna personal o máquinas a la estación antes de iniciar.');
+        return;
+      }
       const hasEnoughIngredients = station.inputProductIds.every(inputProductId =>
         inventory.filter(item => item.productId === inputProductId).length >= 1
       );
@@ -1387,6 +1555,163 @@ const handleDropToInventory = (e) => {
         return w;
       })
     );
+  };
+
+  // Empresa: creación y ledger
+  const createCompany = ({ name, startWithDebt, amount }) => {
+    const base = { name, capital: 0, debt: 0, ledger: [] };
+    let next = base;
+    if (startWithDebt && amount > 0) {
+      next = {
+        ...base,
+        debt: amount,
+        capital: amount,
+        ledger: [{ id: generateId(), type: 'debt', amount, description: 'Aportación inicial (deuda bancaria)', date: new Date().toISOString() }],
+      };
+    }
+    setCompany(next);
+    setMessage('Empresa creada correctamente.');
+  };
+
+  // Fuerza laboral: crear actor humano/máquina
+  const addActor = ({ type, name, hourlyCost, hoursPerDay }) => {
+    const actor = { id: generateId(), type, name, hourlyCost, hoursPerDay, fatigue: 0, maintenanceNeed: 0, status: 'idle', hoursWorkedToday: 0 };
+    setWorkforce(prev => [...prev, actor]);
+    setMessage(`${type === 'human' ? 'Humano' : 'Máquina'} "${name}" registrado.`);
+  };
+
+  // Asignación a estación
+  const assignActorToStation = (actorId, warehouseId, stationIndex) => {
+    const actor = workforce.find(a => a.id === actorId);
+    if (!actor) return;
+    setWarehouses(prev => prev.map(w => {
+      if (w.id !== warehouseId) return w;
+      const newStations = [...w.stations];
+      const st = newStations[stationIndex];
+      if (!st) return w;
+      const isHuman = actor.type === 'human';
+      const workerIds = st.assignedWorkerIds || [];
+      const machineIds = st.assignedMachineIds || [];
+      const nextStation = {
+        ...st,
+        assignedWorkerIds: isHuman ? Array.from(new Set([...workerIds, actor.id])) : workerIds,
+        assignedMachineIds: !isHuman ? Array.from(new Set([...machineIds, actor.id])) : machineIds,
+      };
+      newStations[stationIndex] = nextStation;
+      return { ...w, stations: newStations };
+    }));
+  };
+
+  const unassignActorFromStation = (actorId, warehouseId, stationIndex) => {
+    setWarehouses(prev => prev.map(w => {
+      if (w.id !== warehouseId) return w;
+      const newStations = [...w.stations];
+      const st = newStations[stationIndex];
+      if (!st) return w;
+      newStations[stationIndex] = {
+        ...st,
+        assignedWorkerIds: (st.assignedWorkerIds || []).filter(id => id !== actorId),
+        assignedMachineIds: (st.assignedMachineIds || []).filter(id => id !== actorId),
+      };
+      return { ...w, stations: newStations };
+    }));
+  };
+
+  // Inventario personal: agregar/remover items (máx 4)
+  const addToPersonalInventory = (item) => {
+    if (personalInventory.length >= 4) {
+      setMessage('Tu inventario personal está lleno (máx 4 items).');
+      return;
+    }
+    setPersonalInventory(prev => [...prev, item]);
+    setMessage(`"${item.name}" añadido a tu inventario personal.`);
+  };
+
+  const removeFromPersonalInventory = (uniqueId) => {
+    const item = personalInventory.find(i => i.uniqueId === uniqueId);
+    setPersonalInventory(prev => prev.filter(i => i.uniqueId !== uniqueId));
+    if (item) {
+      setInventory(prev => [...prev, item]);
+      setMessage(`"${item.name}" devuelto al inventario general.`);
+    }
+  };
+
+  // Asignar tarea a un actor (estación + duración en horas)
+  const assignTaskToActor = (actorId, warehouseId, stationIndex, durationHours) => {
+    const actor = workforce.find(a => a.id === actorId);
+    if (!actor) return;
+    const key = actorId;
+    setActorTasks(prev => ({
+      ...prev,
+      [key]: { actorId, warehouseId, stationIndex, durationHours, hoursWorked: 0, status: 'idle' },
+    }));
+    setMessage(`Tarea asignada a ${actor.name}: estación (${durationHours} horas).`);
+  };
+
+  // Mover items del inventario a venta - abre modal para precio
+  const moveItemToSale = (item) => {
+    setPriceModalItem(item);
+    setPriceInput('');
+  };
+
+  // Confirmar movimiento a venta con precio
+  const confirmMoveItemToSale = () => {
+    if (!priceModalItem) return;
+    
+    const price = parseFloat(priceInput);
+    if (isNaN(price) || price < 0) {
+      setMessage('Por favor ingresa un precio válido.');
+      return;
+    }
+
+    const userKey = currentUser === 'store' ? 'store' : 'main';
+    const existingSale = productsForSale[userKey].find(p => p.productId === priceModalItem.productId);
+    
+    if (existingSale) {
+      setProductsForSale(prev => ({
+        ...prev,
+        [userKey]: prev[userKey].map(p => 
+          p.productId === priceModalItem.productId 
+            ? { ...p, quantity: (p.quantity || 0) + priceModalItem.qty, sellingPrice: price }
+            : p
+        )
+      }));
+    } else {
+      setProductsForSale(prev => ({
+        ...prev,
+        [userKey]: [...prev[userKey], { 
+          productId: priceModalItem.productId,
+          productName: priceModalItem.name,
+          color: priceModalItem.color,
+          quantity: priceModalItem.qty,
+          sellingPrice: price
+        }]
+      }));
+    }
+    
+    // Remover del inventario
+    setInventory(prev => prev.filter(i => i.productId !== priceModalItem.productId));
+    setMessage(`"${priceModalItem.name}" movido a venta por $${price} c/u.`);
+    
+    // Limpiar modal
+    setPriceModalItem(null);
+    setPriceInput('');
+  };
+
+  const removeItemFromSale = (productId) => {
+    const userKey = currentUser === 'store' ? 'store' : 'main';
+    const item = productsForSale[userKey].find(p => p.productId === productId);
+    
+    if (item) {
+      setProductsForSale(prev => ({
+        ...prev,
+        [userKey]: prev[userKey].filter(p => p.productId !== productId)
+      }));
+      
+      // Devolver al inventario
+      setInventory(prev => [...prev, { ...item }]);
+      setMessage(`"${item.name}" removido de venta.`);
+    }
   };
 
   const handleCompleteProcessing = (warehouseId, stationIndex) => {
@@ -1497,10 +1822,16 @@ const handleDropToInventory = (e) => {
             setDraggedItem={setDraggedItem}
             draggedItem={draggedItem}
             isDraggable = {isDraggable}
+            moveItemToSale={moveItemToSale}
+            currentUser={currentUser}
           />
         );
       case 'register':
-        return <RegisterView handleProductFormSubmit={handleProductFormSubmit} />;
+        return currentUser === 'store' ? <RegisterView handleProductFormSubmit={handleProductFormSubmit} /> : (
+          <div className="w-full max-w-5xl p-6 bg-white rounded-lg shadow-md text-center">
+            <p className="text-lg text-gray-700">Esta función solo está disponible para el Usuario Tienda.</p>
+          </div>
+        );
       case 'buy':
         return (
           <BuyView
@@ -1510,6 +1841,9 @@ const handleDropToInventory = (e) => {
             stations={stations}
             cartItems={cartItems}
             setIsCartOpen={setIsCartOpen}
+            productsForSale={productsForSale}
+            currentUser={currentUser}
+            removeItemFromSale={removeItemFromSale}
           />
         );
       case 'stations':
@@ -1538,12 +1872,21 @@ const handleDropToInventory = (e) => {
             setMessage={setMessage}
           />
         );
+      case 'company':
+        return (
+          <CompanyView company={company} createCompany={createCompany} />
+        );
+      case 'workforce':
+        return (
+          <WorkforceView workforce={workforce} addActor={addActor} />
+        );
       default:
         return null;
     }
   };
 
   return (
+    <>
     <div className="min-h-screen bg-gray-100 flex flex-col items-center p-6 font-sans antialiased text-gray-800">
       <script src="https://cdn.tailwindcss.com"></script>
       <style>
@@ -1561,9 +1904,38 @@ const handleDropToInventory = (e) => {
         }
         `}
       </style>
-      <header className="w-full max-w-5xl text-center mb-4">
-        <h1 className="text-4xl font-bold text-gray-900 text-shadow">Sistema de Gestión de Inventario</h1>
-        <p className="text-lg text-gray-600 mt-2">Organiza tus productos, estaciones y almacenes.</p>
+      <header className="w-full max-w-5xl text-center mb-4 flex flex-col items-center gap-4">
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-semibold text-gray-700">Usuario:</label>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="user"
+                value="store"
+                checked={currentUser === 'store'}
+                onChange={() => setCurrentUser('store')}
+                className="w-4 h-4"
+              />
+              <span className="text-gray-700">Tienda</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="user"
+                value="main"
+                checked={currentUser === 'main'}
+                onChange={() => setCurrentUser('main')}
+                className="w-4 h-4"
+              />
+              <span className="text-gray-700">Principal</span>
+            </label>
+          </div>
+        </div>
+        <div>
+          <h1 className="text-4xl font-bold text-gray-900 text-shadow">SGI {currentUser === 'store' ? '(Tienda)' : '(Principal)'}</h1>
+          <p className="text-lg text-gray-600 mt-2">Organiza tus productos, estaciones y almacenes.</p>
+        </div>
       </header>
 
       <div className="flex justify-center space-x-2 mb-8">
@@ -1572,6 +1944,8 @@ const handleDropToInventory = (e) => {
         <NavButton view="buy" icon={ShoppingCart} label="Tienda" />
         <NavButton view="stations" icon={Factory} label="Estaciones" />
         <NavButton view="warehouses" icon={Archive} label="Almacenes" />
+        <NavButton view="company" icon={Archive} label="Empresa" />
+        <NavButton view="workforce" icon={Archive} label="Fuerza Laboral" />
       </div>
 
       {message && (
@@ -1582,21 +1956,79 @@ const handleDropToInventory = (e) => {
 
       {renderView()}
 
-      {isModalOpen && (
+      {/* Modal para ingresar precio de venta */}
+      {priceModalItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
+            <h3 className="text-2xl font-bold mb-4 text-gray-800">Establecer Precio de Venta</h3>
+            
+            <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <p className="text-sm text-gray-600">Producto</p>
+              <p className="text-lg font-semibold text-gray-800">{priceModalItem.name}</p>
+              <p className="text-sm text-gray-600 mt-2">Cantidad disponible</p>
+              <p className="text-lg font-bold text-indigo-600">{priceModalItem.qty} unidades</p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Precio por unidad ($)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={priceInput}
+                onChange={(e) => setPriceInput(e.target.value)}
+                placeholder="0.00"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setPriceModalItem(null);
+                  setPriceInput('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmMoveItemToSale}
+                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isModalOpen && (() => {
+        const w = warehouses.find(w => w.id === selectedStation?.warehouseId);
+        const st = selectedStation ? w?.stations[selectedStation.stationIndex] : null;
+        const liveStation = st ? { ...st, warehouseId: selectedStation.warehouseId, stationIndex: selectedStation.stationIndex } : null;
+        return (
         <StationDetailsModal
-          station={selectedStation}
+          station={liveStation}
           onClose={() => setIsModalOpen(false)}
           updateStationStatus={updateStationStatus}
           handleMoveFinalProductToInventory={handleMoveFinalProductToInventory}
           products={products}
           inventory={inventory}
-        />
-      )}
+          company={company}
+          workforce={workforce}
+          assignActorToStation={assignActorToStation}
+          unassignActorFromStation={unassignActorFromStation}
+          assignTaskToActor={assignTaskToActor}
+        />);
+      })()}
 
-      {(currentView === 'buy' || currentView === 'register') && (
+      {currentView === 'buy' && (
         <button
           onClick={() => setIsCartOpen(true)}
           className="fixed bottom-6 right-6 p-4 rounded-full shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-indigo-500"
+          title="Abrir carrito"
         >
           <div className="flex items-center">
             <ShoppingCart size={24} />
@@ -1617,6 +2049,28 @@ const handleDropToInventory = (e) => {
         />
       )}
     </div>
+    {isPersonalPanelVisible && (
+      <PersonalPanel
+        personalInventory={personalInventory}
+        addToPersonalInventory={addToPersonalInventory}
+        removeFromPersonalInventory={removeFromPersonalInventory}
+        handleDragOver={handleDragOver}
+        handleDragLeave={handleDragLeave}
+        dailyBalance={dailyBalance}
+        isVisible={isPersonalPanelVisible}
+        setIsVisible={setIsPersonalPanelVisible}
+      />
+    )}
+    {!isPersonalPanelVisible && (
+      <button
+        onClick={() => setIsPersonalPanelVisible(true)}
+        className="fixed top-6 right-6 p-3 rounded-full shadow-lg bg-blue-600 text-white hover:bg-blue-700 transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500"
+        title="Mostrar panel personal"
+      >
+        📦
+      </button>
+    )}
+    </>
   );
 };
 
