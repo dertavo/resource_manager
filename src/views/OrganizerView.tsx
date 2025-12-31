@@ -66,6 +66,7 @@ interface OrganizerViewProps {
   setDraggedItem: React.Dispatch<React.SetStateAction<DraggedItem | null>>;
   moveItemToSale?: (item: InventoryItem) => void;
   currentUser?: string;
+  openRequestModal?: () => void;
 }
 
 const OrganizerView: React.FC<OrganizerViewProps> = ({
@@ -86,6 +87,7 @@ const OrganizerView: React.FC<OrganizerViewProps> = ({
   setDraggedItem,
   moveItemToSale,
   currentUser,
+  openRequestModal,
 }) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<number>>) => {
     const value = Math.max(1, Number(e.target.value));
@@ -899,7 +901,18 @@ const handleDropToTrashInternal = (e: React.DragEvent<HTMLDivElement> | Syntheti
               WebkitUserSelect: 'none'
             }}
           >
-            <h2 className="text-2xl font-semibold mb-4 text-gray-700">Inventario</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-semibold text-gray-700">Inventario</h2>
+              {openRequestModal && (
+                <button
+                  onClick={openRequestModal}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors flex items-center gap-2 shadow-md"
+                >
+                  <ShoppingCart size={16} />
+                  <span>Enviar Productos</span>
+                </button>
+              )}
+            </div>
             <p className="text-xs text-gray-500 mb-3">
               <strong>Móvil:</strong> Mantén presionado 300ms | <strong>PC:</strong> Arrastra normalmente
             </p>
@@ -928,15 +941,6 @@ const handleDropToTrashInternal = (e: React.DragEvent<HTMLDivElement> | Syntheti
                         <p>{item.name}</p>
                         <p className="mt-1 font-bold">({item.qty})</p>
                       </div>
-                      {currentUser === 'main' && moveItemToSale && (
-                        <button
-                          onClick={() => moveItemToSale(item)}
-                          className="px-3 py-2 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 transition-colors flex items-center justify-center space-x-1"
-                        >
-                          <ShoppingCart size={12} />
-                          <span>Poner en venta</span>
-                        </button>
-                      )}
                     </div>
                   ))
               ) : (

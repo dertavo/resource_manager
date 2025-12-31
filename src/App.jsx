@@ -696,9 +696,24 @@ const generateId = () => Math.random().toString(36).substring(2, 9);
 // };
 
 // Componente modal del carrito
-const CartView = ({ cartItems, onPurchase, onClose }) => {
+const CartView = ({ cartItems, onPurchase, onClose, onUpdateCart }) => {
   const calculateTotal = () => {
-    return cartItems.reduce((total, item) => total + item.price * item.quantity, 0).toFixed(2);
+    return cartItems.reduce((total, item) => total + ((item.displayPrice || item.price) * item.quantity), 0).toFixed(2);
+  };
+
+  const handleRemoveItem = (itemId) => {
+    onUpdateCart(cartItems.filter(item => item.id !== itemId));
+  };
+
+  const handleQuantityChange = (itemId, newQuantity) => {
+    if (newQuantity <= 0) {
+      handleRemoveItem(itemId);
+    } else {
+      const updatedCart = cartItems.map(item =>
+        item.id === itemId ? { ...item, quantity: newQuantity } : item
+      );
+      onUpdateCart(updatedCart);
+    }
   };
 
   return (
@@ -718,23 +733,58 @@ const CartView = ({ cartItems, onPurchase, onClose }) => {
             <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
               {cartItems.map(item => (
                 <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-8 h-8 rounded-full mr-3" style={{ backgroundColor: item.color }}></div>
-                    <div>
-                      <h4 className="font-semibold text-lg">{item.name}</h4>
-                      <p className="text-gray-500 text-sm">Cantidad: {item.quantity}</p>
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <div className="w-6 h-6 rounded-full" style={{ backgroundColor: item.color }}></div>
+                      <h4 className="font-semibold">{item.name}</h4>
+                    </div>
+                    <p className="text-sm text-gray-600">Precio: ${(item.displayPrice || item.price).toFixed(2)}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <p className="font-bold">${((item.displayPrice || item.price) * item.quantity).toFixed(2)}</p>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                        className="px-2 py-1 bg-gray-300 hover:bg-gray-400 rounded text-sm"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
+                        className="w-10 text-center border border-gray-300 rounded text-sm"
+                      />
+                      <button
+                        onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                        className="px-2 py-1 bg-gray-300 hover:bg-gray-400 rounded text-sm"
+                      >
+                        +
+                      </button>
+                      <button
+                        onClick={() => handleRemoveItem(item.id)}
+                        className="ml-2 px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-sm"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
                   </div>
-                  <p className="font-bold text-lg">${(item.price * item.quantity).toFixed(2)}</p>
                 </div>
               ))}
             </div>
             <div className="mt-6 pt-4 border-t-2 border-gray-200">
-              <div className="flex justify-between items-center font-bold text-2xl">
+              <div className="flex justify-between items-center font-bold text-2xl mb-4">
                 <span>Total:</span>
                 <span>${calculateTotal()}</span>
               </div>
-              <div className="flex space-x-4 mt-6">
+              <div className="flex space-x-4">
+                <button
+                  onClick={onClose}
+                  className="flex-1 py-3 bg-gray-400 text-white font-semibold rounded-lg hover:bg-gray-500 transition-colors"
+                >
+                  Seguir Comprando
+                </button>
                 <button
                   onClick={onPurchase}
                   className="flex-1 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors"
@@ -752,9 +802,31 @@ const CartView = ({ cartItems, onPurchase, onClose }) => {
 
 // Componente principal de la aplicación
 const App = () => {
-  const [currentView, setCurrentView] = useState('organizer');
+  // Primero declaramos currentUser porque se necesita para otras inicializaciones
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem('currentUser');
+      return stored ? stored : 'store';
+    } catch {
+      return 'store';
+    }
+  });
+
+  // Ahora podemos usar currentUser para inicializar currentView
+  const [currentView, setCurrentView] = useState(() => {
+    const stored = localStorage.getItem('currentUser');
+    return stored === 'store' ? 'register' : 'organizer';
+  });
 
     const [isDraggable, setIsDraggable] =useState(true);
+
+  // Efecto para validar que el usuario tienda no acceda a vistas restringidas
+  useEffect(() => {
+    const restrictedViews = ['organizer', 'stations', 'warehouses', 'company', 'workforce'];
+    if (currentUser === 'store' && restrictedViews.includes(currentView)) {
+      setCurrentView('register'); // Redirigir a una vista permitida
+    }
+  }, [currentUser]);
 
   // Estados para la persistencia de datos
   const [products, setProducts] = useState(() => {
@@ -801,6 +873,16 @@ const App = () => {
       return storedInventory ? JSON.parse(storedInventory) : [];
     } catch (error) {
       console.error("Error al cargar inventario de localStorage:", error);
+      return [];
+    }
+  });
+
+  // Inventario independiente para usuario "store"
+  const [storeInventory, setStoreInventory] = useState(() => {
+    try {
+      const stored = localStorage.getItem('storeInventory');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
       return [];
     }
   });
@@ -854,14 +936,57 @@ const App = () => {
       return { date: new Date().toISOString().split('T')[0], income: 0, expenses: 0, entries: [] };
     }
   });
-  const [currentUser, setCurrentUser] = useState(() => {
+
+  // Balance global (todas las fuentes: ventas, compras, etc.)
+  const [globalBalance, setGlobalBalance] = useState(() => {
     try {
-      const stored = localStorage.getItem('currentUser');
-      return stored ? stored : 'store';
+      const stored = localStorage.getItem('globalBalance');
+      return stored ? JSON.parse(stored) : { income: 0, expenses: 0, entries: [] };
     } catch {
-      return 'store';
+      return { income: 0, expenses: 0, entries: [] };
     }
   });
+
+  // Configuración del día
+  const [dayConfig, setDayConfig] = useState(() => {
+    try {
+      const stored = localStorage.getItem('dayConfig');
+      return stored ? JSON.parse(stored) : { startHour: 6, endHour: 4, canSleepFromHour: 22, speedMultiplier: 60 };
+    } catch {
+      return { startHour: 6, endHour: 4, canSleepFromHour: 22, speedMultiplier: 60 };
+    }
+  });
+
+  // Tiempo actual del día (en horas decimales, ej: 6.5 = 6:30am)
+  const [currentDayTime, setCurrentDayTime] = useState(() => {
+    try {
+      const stored = localStorage.getItem('currentDayTime');
+      return stored ? parseFloat(stored) : dayConfig.startHour;
+    } catch {
+      return dayConfig.startHour;
+    }
+  });
+
+  // Estado del reloj (corriendo o pausado)
+  const [isClockRunning, setIsClockRunning] = useState(() => {
+    try {
+      const stored = localStorage.getItem('isClockRunning');
+      return stored ? JSON.parse(stored) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  // Número de día actual
+  const [currentDay, setCurrentDay] = useState(() => {
+    try {
+      const stored = localStorage.getItem('currentDay');
+      return stored ? parseInt(stored) : 1;
+    } catch {
+      return 1;
+    }
+  });
+
   const [productsForSale, setProductsForSale] = useState(() => {
     try {
       const stored = localStorage.getItem('productsForSale');
@@ -870,6 +995,108 @@ const App = () => {
       return { store: [], main: [] };
     }
   });
+  // Helpers para escoger inventario según usuario actual
+  const getActiveInventory = () => currentUser === 'store' ? storeInventory : inventory;
+  const updateActiveInventory = (updater) => {
+    if (currentUser === 'store') {
+      if (typeof updater === 'function') {
+        setStoreInventory(prev => updater(prev));
+      } else {
+        setStoreInventory(updater);
+      }
+    } else {
+      if (typeof updater === 'function') {
+        setInventory(prev => updater(prev));
+      } else {
+        setInventory(updater);
+      }
+    }
+  };
+
+  // Avance automático del tiempo
+  useEffect(() => {
+    if (!isClockRunning) return;
+
+    const interval = setInterval(() => {
+      setCurrentDayTime(prev => {
+        // Avanza 1 minuto in-game cada segundo real (multiplicado por speedMultiplier)
+        const increment = (1 / 60) * (dayConfig.speedMultiplier / 60);
+        let newTime = prev + increment;
+
+        // Si el tiempo actual supera las 24 horas, reinicia desde 0
+        if (newTime >= 24) {
+          newTime = newTime - 24;
+        }
+
+        // Verificar si se alcanzó la hora de fin del día
+        const { startHour, endHour } = dayConfig;
+        const reachedEndHour = endHour < startHour 
+          ? (prev < endHour && newTime >= endHour) || (prev >= startHour && newTime >= 24)
+          : (prev < endHour && newTime >= endHour);
+        
+        if (reachedEndHour) {
+          // Terminar el día automáticamente
+          setTimeout(() => {
+            finishDay();
+          }, 100);
+        }
+
+        return newTime;
+      });
+    }, 1000); // Cada segundo real
+
+    return () => clearInterval(interval);
+  }, [isClockRunning, dayConfig.speedMultiplier, dayConfig.startHour, dayConfig.endHour]);
+
+  // Función para terminar el día manualmente
+  const finishDay = () => {
+    // Transferir balance diario al global
+    const netBalance = dailyBalance.income - dailyBalance.expenses;
+    
+    setGlobalBalance(prev => ({
+      income: prev.income + dailyBalance.income,
+      expenses: prev.expenses + dailyBalance.expenses,
+      entries: [
+        ...prev.entries,
+        {
+          id: `day-${currentDay}-transfer-${Date.now()}`,
+          type: netBalance >= 0 ? 'income' : 'expense',
+          amount: Math.abs(netBalance),
+          description: `Balance del Día ${currentDay}`,
+          timestamp: new Date().toISOString()
+        }
+      ]
+    }));
+
+    // Resetear balance diario
+    setDailyBalance({
+      date: new Date().toISOString().split('T')[0],
+      income: 0,
+      expenses: 0,
+      entries: []
+    });
+
+    // Avanzar al siguiente día
+    setCurrentDay(prev => prev + 1);
+    setCurrentDayTime(dayConfig.startHour);
+    setIsClockRunning(false);
+    
+    setMessage(`Día ${currentDay} finalizado. Balance transferido al global: $${netBalance.toFixed(2)}`);
+  };
+
+  // Verificar si se puede dormir (basado en la hora actual)
+  const canSleep = () => {
+    const { canSleepFromHour, startHour, endHour } = dayConfig;
+    
+    // Si endHour < startHour, significa que el día termina al día siguiente (ej: 6am - 4am)
+    if (endHour < startHour) {
+      // Puede dormir si la hora actual está entre canSleepFromHour y 24, o entre 0 y endHour
+      return currentDayTime >= canSleepFromHour || currentDayTime <= endHour;
+    } else {
+      // Día normal: puede dormir si está entre canSleepFromHour y endHour
+      return currentDayTime >= canSleepFromHour && currentDayTime <= endHour;
+    }
+  };
   const [isPersonalPanelVisible, setIsPersonalPanelVisible] = useState(() => {
     try {
       const stored = localStorage.getItem('isPersonalPanelVisible');
@@ -880,6 +1107,27 @@ const App = () => {
   });
   const [priceModalItem, setPriceModalItem] = useState(null);
   const [priceInput, setPriceInput] = useState('');
+
+  // Estados para el sistema de solicitudes de productos
+  const [productRequests, setProductRequests] = useState(() => {
+    try {
+      const stored = localStorage.getItem('productRequests');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState({});
+  const [requestDestination, setRequestDestination] = useState('tienda'); // 'tienda' o 'publico'
+  const [publicSaleProducts, setPublicSaleProducts] = useState(() => {
+    try {
+      const stored = localStorage.getItem('publicSaleProducts');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Referencia para almacenar los temporizadores de las estaciones
   const stationTimersRef = useRef({});
@@ -928,6 +1176,31 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('isPersonalPanelVisible', JSON.stringify(isPersonalPanelVisible));
   }, [isPersonalPanelVisible]);
+  useEffect(() => {
+    localStorage.setItem('productRequests', JSON.stringify(productRequests));
+  }, [productRequests]);
+  useEffect(() => {
+    localStorage.setItem('publicSaleProducts', JSON.stringify(publicSaleProducts));
+  }, [publicSaleProducts]);
+
+  useEffect(() => {
+    localStorage.setItem('dayConfig', JSON.stringify(dayConfig));
+  }, [dayConfig]);
+
+  useEffect(() => {
+    localStorage.setItem('currentDayTime', currentDayTime.toString());
+  }, [currentDayTime]);
+
+  useEffect(() => {
+    localStorage.setItem('isClockRunning', JSON.stringify(isClockRunning));
+  }, [isClockRunning]);
+
+  useEffect(() => {
+    localStorage.setItem('currentDay', currentDay.toString());
+  }, [currentDay]);
+  useEffect(() => {
+    localStorage.setItem('globalBalance', JSON.stringify(globalBalance));
+  }, [globalBalance]);
 
   // Genera los estantes iniciales si no existen
   useEffect(() => {
@@ -946,6 +1219,11 @@ const App = () => {
 
     
   },[inventory]);
+
+  // Persistencia de storeInventory
+  useEffect(() => {
+    localStorage.setItem('storeInventory', JSON.stringify(storeInventory));
+  }, [storeInventory]);
 
   // Nuevo useEffect para manejar los temporizadores de manera independiente
   useEffect(() => {
@@ -1003,6 +1281,7 @@ const App = () => {
               }
             }
             setWarehouses(prevWarehouses => {
+              let completed = false;
               const newWarehouses = prevWarehouses.map(w => {
                 if (w.id === warehouse.id) {
                   const newStations = [...w.stations];
@@ -1011,7 +1290,7 @@ const App = () => {
                     if (newTime <= 0) {
                       clearInterval(stationTimersRef.current[station.id]);
                       delete stationTimersRef.current[station.id];
-                      handleCompleteProcessing(w.id, stationIndex);
+                      completed = true;
                       return {
                         ...w,
                         stations: newStations.map((s, idx) =>
@@ -1029,6 +1308,9 @@ const App = () => {
                 }
                 return w;
               });
+              if (completed) {
+                handleProcessingCycleComplete(warehouse.id, stationIndex, station.processingMode || 'once');
+              }
               return newWarehouses;
             });
           }, 1000);
@@ -1047,6 +1329,71 @@ const App = () => {
     const itemsInShelves = shelves.flatMap(s => s.items.map(item => item.uniqueId));
 
     return inventory.filter(item => !itemsInShelves.includes(item.uniqueId));
+  };
+
+  // Cantidad disponible de un producto en inventario (suma qty)
+  const getInventoryCount = (productId, inv = inventory) =>
+    inv.reduce((sum, item) => sum + (item.productId === productId ? (item.qty || 1) : 0), 0);
+
+  const hasEnoughIngredientsForStation = (station, inv = inventory) =>
+    (station?.inputProductIds || []).every(pid => getInventoryCount(pid, inv) > 0);
+
+  const consumeIngredientsForStation = (station, inv = inventory) => {
+    let next = [...inv];
+    (station?.inputProductIds || []).forEach(pid => {
+      const idx = next.findIndex(item => item.productId === pid && (item.qty || 1) > 0);
+      if (idx !== -1) {
+        const item = next[idx];
+        const remaining = (item.qty || 1) - 1;
+        if (remaining <= 0) {
+          next.splice(idx, 1);
+        } else {
+          next[idx] = { ...item, qty: remaining };
+        }
+      }
+    });
+    return next;
+  };
+
+  const actorsHaveHoursLeft = (station) => {
+    const assignedWorkerIds = station.assignedWorkerIds || [];
+    const assignedMachineIds = station.assignedMachineIds || [];
+    const actors = workforce.filter(a => assignedWorkerIds.includes(a.id) || assignedMachineIds.includes(a.id));
+    if (actors.length === 0) return false;
+    return actors.every(a => (a.hoursPerDay || 0) - (a.hoursWorkedToday || 0) > 0);
+  };
+
+  const canAutoContinue = (station, inv = inventory) => {
+    if (!station) return false;
+    const hasAssignedActors = ((station.assignedWorkerIds && station.assignedWorkerIds.length > 0) || (station.assignedMachineIds && station.assignedMachineIds.length > 0));
+    if (!hasAssignedActors) return false;
+    if (!hasEnoughIngredientsForStation(station, inv)) return false;
+    if (station.processingMode === 'shift') {
+      return actorsHaveHoursLeft(station);
+    }
+    if (station.processingMode === 'stock') {
+      return true;
+    }
+    return false;
+  };
+
+  const addFinalProductToInventory = (station, baseInventory = inventory) => {
+    const productId = station.finalProductId || station.id; // fallback stable id per station
+    const color = station.finalProductColor || `hsl(${Math.random() * 360}, 70%, 80%)`;
+    const next = [...baseInventory];
+    const idx = next.findIndex(item => item.productId === productId);
+    if (idx !== -1) {
+      const item = next[idx];
+      next[idx] = { ...item, qty: (item.qty || 1) + 1 };
+      return next;
+    }
+    return [...next, {
+      uniqueId: `${productId}-${generateId()}`,
+      productId,
+      name: station.finalProductName,
+      color,
+      qty: 1,
+    }];
   };
 
   const getInventorySummary = () => {
@@ -1260,24 +1607,24 @@ const handleDropToInventory = (e) => {
 
     // B. Devolver el ítem al inventario. Lo consolidamos con el inventario existente.
     if (itemToReturnToInventory) {
-        setInventory(prevInventory => {
-            const existingItemIndex = prevInventory.findIndex(
-                item => item.productId === itemToReturnToInventory.productId
-            );
+      updateActiveInventory(prevInventory => {
+        const existingItemIndex = prevInventory.findIndex(
+          item => item.productId === itemToReturnToInventory.productId
+        );
 
-            if (existingItemIndex !== -1) {
-                // Si ya existe, incrementa la cantidad
-                const newInventory = [...prevInventory];
-                newInventory[existingItemIndex] = {
-                    ...newInventory[existingItemIndex],
-                    qty: newInventory[existingItemIndex].qty + itemToReturnToInventory.qty
-                };
-                return newInventory;
-            } else {
-                // Si no existe, agrégalo al inventario
-                return [...prevInventory, itemToReturnToInventory];
-            }
-        });
+        if (existingItemIndex !== -1) {
+          // Si ya existe, incrementa la cantidad
+          const newInventory = [...prevInventory];
+          newInventory[existingItemIndex] = {
+            ...newInventory[existingItemIndex],
+            qty: newInventory[existingItemIndex].qty + itemToReturnToInventory.qty
+          };
+          return newInventory;
+        } else {
+          // Si no existe, agrégalo al inventario
+          return [...prevInventory, itemToReturnToInventory];
+        }
+      });
     }
 
     // C. Limpieza final
@@ -1288,9 +1635,10 @@ const handleDropToInventory = (e) => {
     e.preventDefault();
     if (!draggedItem) return;
     if (draggedItem.type === 'grouped-inventory') {
-      const itemIndexToRemove = inventory.findIndex(item => item.productId === draggedItem.productId);
+      const activeInv = getActiveInventory();
+      const itemIndexToRemove = activeInv.findIndex(item => item.productId === draggedItem.productId);
       if (itemIndexToRemove !== -1) {
-        setInventory(prevInventory => prevInventory.filter((_, index) => index !== itemIndexToRemove));
+        updateActiveInventory(prevInventory => prevInventory.filter((_, index) => index !== itemIndexToRemove));
         setMessage(`Una unidad de "${draggedItem.name}" ha sido eliminada permanentemente.`);
       }
     } else if (draggedItem.type === 'shelf') {
@@ -1379,10 +1727,15 @@ const handleDropToInventory = (e) => {
     }
     const newId = generateId();
     const newColor = `hsl(${Math.random() * 360}, 70%, 80%)`;
-    const product = { ...newProduct, id: newId, color: newColor };
+    const product = { 
+      ...newProduct, 
+      id: newId, 
+      color: newColor, 
+      owner: currentUser,
+      displayPrice: parseFloat(newProduct.price) || 0
+    };
     setProducts(prevProducts => {
       const updatedProducts = [...prevProducts, product];
-      // Persistir inmediatamente en localStorage
       localStorage.setItem('products', JSON.stringify(updatedProducts));
       return updatedProducts;
     });
@@ -1424,6 +1777,25 @@ const handleDropToInventory = (e) => {
       setMessage('El carrito está vacío. ¡Agrega productos para comprar!');
       return;
     }
+    
+    // Validar que el balance sea > 0
+    const currentBalance = globalBalance.income - globalBalance.expenses;
+    if (currentBalance <= 0) {
+      setMessage('No puedes comprar sin balance. Tu balance debe ser mayor a 0.');
+      return;
+    }
+    
+    // Calcular costo total
+    const totalCost = cartItems.reduce((sum, item) => {
+      return sum + ((item.displayPrice || item.price) * item.quantity);
+    }, 0);
+    
+    // Validar que hay suficiente balance
+    if (totalCost > currentBalance) {
+      setMessage(`No tienes suficiente balance. Necesitas $${totalCost.toFixed(2)} pero solo tienes $${currentBalance.toFixed(2)}`);
+      return;
+    }
+    
     const newInventoryItems = [];
     const updatedProducts = [...products];
 
@@ -1434,37 +1806,52 @@ const handleDropToInventory = (e) => {
       
         const onInventory = inventory.findIndex(p => p.productId === cartItem.id);
         if(onInventory !==-1){
-                  
           setInventory(prevInventory =>
             prevInventory.map((item, index) =>
               index === onInventory
-                ? { ...item, qty: item.qty + cartItem.quantity , // sumamos la cantidad
-                    uniqueId: `${item.id}-${generateId()}`,
-                } 
+                ? { ...item, qty: item.qty + cartItem.quantity, uniqueId: `${item.id}-${generateId()}` } 
                 : item
             )
           );
         }else{
- 
-        const newItems = Array.from({ length: 1 }, () => ({
-          uniqueId: `${cartItem.id}-${generateId()}`,
-          productId: cartItem.id,
-          name: cartItem.name,
-          color: cartItem.color,
-          capacity : cartItem.capacity,
-          qty : cartItem.quantity
-        }));
-         newInventoryItems.push(...newItems);
-      }
-       
-       
+          const newItems = Array.from({ length: 1 }, () => ({
+            uniqueId: `${cartItem.id}-${generateId()}`,
+            productId: cartItem.id,
+            name: cartItem.name,
+            color: cartItem.color,
+            capacity : cartItem.capacity,
+            qty : cartItem.quantity
+          }));
+          newInventoryItems.push(...newItems);
+        }
       }
     });
+    
     setProducts(updatedProducts);
-    setInventory(prevInventory => [...prevInventory, ...newInventoryItems]);
+    
+    // Si es usuario store, envía a storeInventory; si es main, a inventory
+    if (currentUser === 'store') {
+      setStoreInventory(prevInventory => [...prevInventory, ...newInventoryItems]);
+    } else {
+      setInventory(prevInventory => [...prevInventory, ...newInventoryItems]);
+    }
+    
+    // Actualizar balance diario (restar gastos)
+    setDailyBalance(prev => ({
+      ...prev,
+      expenses: prev.expenses + totalCost,
+      entries: [...prev.entries, {
+        id: generateId(),
+        type: 'expense',
+        amount: totalCost,
+        description: `Compra de ${cartItems.length} producto(s)`,
+        timestamp: new Date().toISOString()
+      }]
+    }));
+    
     setCartItems([]);
     setIsCartOpen(false);
-    setMessage(`¡Compra completada! Se agregaron ${newInventoryItems.length} nuevos artículos a tu inventario.`);
+    setMessage(`¡Compra completada! Se gastaron $${totalCost.toFixed(2)}. Nuevo balance: $${(currentBalance - totalCost).toFixed(2)}`);
   };
 
   const handleStationFormSubmit = (newStation) => {
@@ -1473,7 +1860,10 @@ const handleDropToInventory = (e) => {
       return;
     }
     const processingTime = newStation.inputProductIds.length * 10;
-    const station = { id: generateId(), ...newStation, processingTime };
+    const existingFinalProduct = products.find(p => p.name === newStation.finalProductName);
+    const finalProductId = existingFinalProduct ? existingFinalProduct.id : generateId();
+    const finalProductColor = existingFinalProduct ? existingFinalProduct.color : `hsl(${Math.random() * 360}, 70%, 80%)`;
+    const station = { id: generateId(), ...newStation, processingTime, processingMode: 'once', finalProductId, finalProductColor };
     setStations(prevStations => [...prevStations, station]);
     setMessage(`Estación "${station.name}" creada con éxito.`);
   };
@@ -1507,7 +1897,7 @@ const handleDropToInventory = (e) => {
     }
   };
 
-  const updateStationStatus = (warehouseId, stationIndex, newStatus) => {
+  const updateStationStatus = (warehouseId, stationIndex, newStatus, processingMode = 'once') => {
     const station = warehouses.find(w => w.id === warehouseId)?.stations[stationIndex];
     if (newStatus === 'processing' && station) {
       const hasAssignedActors = ((station.assignedWorkerIds && station.assignedWorkerIds.length > 0) || (station.assignedMachineIds && station.assignedMachineIds.length > 0));
@@ -1515,29 +1905,17 @@ const handleDropToInventory = (e) => {
         setMessage('Asigna personal o máquinas a la estación antes de iniciar.');
         return;
       }
-      const hasEnoughIngredients = station.inputProductIds.every(inputProductId =>
-        inventory.filter(item => item.productId === inputProductId).length >= 1
-      );
-      if (!hasEnoughIngredients) {
+      if (!hasEnoughIngredientsForStation(station)) {
         setMessage('¡Inventario insuficiente! No se puede iniciar la producción.');
         return;
       }
-      let newInventory = [...inventory];
-      let consumedItemsCount = 0;
-      station.inputProductIds.forEach(inputProductId => {
-        const itemIndexToRemove = newInventory.findIndex(item => item.productId === inputProductId);
-        if (itemIndexToRemove !== -1) {
-          //newInventory.splice(itemIndexToRemove, 1);
-           newInventory = newInventory.map((item, index) =>
-              index === itemIndexToRemove
-                ? { ...item, qty: item.qty - 1 } 
-                : item
-            )//.filter(item => item.qty > 0);  //Elimina el elemnto si su cantidad resulta en 0.
-          consumedItemsCount++;
-        }
-      });
-      setInventory(newInventory);
-      setMessage(`Se consumieron ${consumedItemsCount} productos para iniciar la producción de "${station.finalProductName}".`);
+      if (processingMode === 'shift' && !actorsHaveHoursLeft(station)) {
+        setMessage('La jornada asignada ya está completa para este equipo.');
+        return;
+      }
+      const consumedInventory = consumeIngredientsForStation(station);
+      setInventory(consumedInventory);
+      setMessage(`Se consumieron ${station.inputProductIds.length} productos para iniciar la producción de "${station.finalProductName}".`);
     }
     setWarehouses(prevWarehouses =>
       prevWarehouses.map(w => {
@@ -1547,6 +1925,7 @@ const handleDropToInventory = (e) => {
             newStations[stationIndex] = {
               ...newStations[stationIndex],
               status: newStatus,
+              processingMode: processingMode || newStations[stationIndex].processingMode || 'once',
               remainingTime: newStatus === 'processing' ? newStations[stationIndex].processingTime : newStations[stationIndex].remainingTime,
             };
           }
@@ -1568,6 +1947,19 @@ const handleDropToInventory = (e) => {
         capital: amount,
         ledger: [{ id: generateId(), type: 'debt', amount, description: 'Aportación inicial (deuda bancaria)', date: new Date().toISOString() }],
       };
+
+          // Agregar dinero al ingreso global del usuario que envió los productos
+    setGlobalBalance(prev => ({
+      ...prev,
+      income: prev.income + amount,
+      entries: [...prev.entries, {
+        id: generateId(),
+        type: 'income',
+        amount: amount,
+        description: `Ingreso a la empresa "${name}" (deuda bancaria)`,
+        timestamp: new Date().toISOString()
+      }]
+    }));
     }
     setCompany(next);
     setMessage('Empresa creada correctamente.');
@@ -1648,6 +2040,56 @@ const handleDropToInventory = (e) => {
     setMessage(`Tarea asignada a ${actor.name}: estación (${durationHours} horas).`);
   };
 
+  // Remover producto de venta pública y devolverlo al inventario
+  const removePublicSaleProduct = (productId) => {
+    const product = publicSaleProducts.find(p => p.productId === productId && p.from === currentUser);
+    if (!product) return;
+
+    // Remover de publicSaleProducts
+    setPublicSaleProducts(prev => prev.filter(p => !(p.productId === productId && p.from === currentUser)));
+
+    // Devolver al inventario correspondiente
+    if (currentUser === 'store') {
+      setStoreInventory(prev => {
+        const existing = prev.find(item => item.productId === productId);
+        if (existing) {
+          return prev.map(item =>
+            item.productId === productId
+              ? { ...item, qty: item.qty + product.quantity }
+              : item
+          );
+        } else {
+          return [...prev, {
+            productId: product.productId,
+            name: product.name,
+            color: product.color,
+            qty: product.quantity
+          }];
+        }
+      });
+    } else {
+      setInventory(prev => {
+        const existing = prev.find(item => item.productId === productId);
+        if (existing) {
+          return prev.map(item =>
+            item.productId === productId
+              ? { ...item, qty: item.qty + product.quantity }
+              : item
+          );
+        } else {
+          return [...prev, {
+            productId: product.productId,
+            name: product.name,
+            color: product.color,
+            qty: product.quantity
+          }];
+        }
+      });
+    }
+
+    setMessage(`"${product.name}" removido de venta y devuelto al inventario.`);
+  };
+
   // Mover items del inventario a venta - abre modal para precio
   const moveItemToSale = (item) => {
     setPriceModalItem(item);
@@ -1664,33 +2106,60 @@ const handleDropToInventory = (e) => {
       return;
     }
 
-    const userKey = currentUser === 'store' ? 'store' : 'main';
-    const existingSale = productsForSale[userKey].find(p => p.productId === priceModalItem.productId);
-    
-    if (existingSale) {
-      setProductsForSale(prev => ({
-        ...prev,
-        [userKey]: prev[userKey].map(p => 
-          p.productId === priceModalItem.productId 
-            ? { ...p, quantity: (p.quantity || 0) + priceModalItem.qty, sellingPrice: price }
+    // Si es usuario store, envía directamente a publicSaleProducts
+    if (currentUser === 'store') {
+      const existing = publicSaleProducts.find(p => p.productId === priceModalItem.productId);
+      
+      if (existing) {
+        setPublicSaleProducts(prev => prev.map(p =>
+          p.productId === priceModalItem.productId
+            ? { ...p, quantity: p.quantity + priceModalItem.qty, price }
             : p
-        )
-      }));
-    } else {
-      setProductsForSale(prev => ({
-        ...prev,
-        [userKey]: [...prev[userKey], { 
+        ));
+      } else {
+        setPublicSaleProducts(prev => [...prev, {
           productId: priceModalItem.productId,
-          productName: priceModalItem.name,
+          name: priceModalItem.name,
           color: priceModalItem.color,
           quantity: priceModalItem.qty,
-          sellingPrice: price
-        }]
-      }));
+          from: 'store',
+          price
+        }]);
+      }
+    } else {
+      // Usuario main: envía a productsForSale
+      const userKey = 'main';
+      const existingSale = productsForSale[userKey].find(p => p.productId === priceModalItem.productId);
+      
+      if (existingSale) {
+        setProductsForSale(prev => ({
+          ...prev,
+          [userKey]: prev[userKey].map(p => 
+            p.productId === priceModalItem.productId 
+              ? { ...p, quantity: (p.quantity || 0) + priceModalItem.qty, sellingPrice: price }
+              : p
+          )
+        }));
+      } else {
+        setProductsForSale(prev => ({
+          ...prev,
+          [userKey]: [...prev[userKey], { 
+            productId: priceModalItem.productId,
+            productName: priceModalItem.name,
+            color: priceModalItem.color,
+            quantity: priceModalItem.qty,
+            sellingPrice: price
+          }]
+        }));
+      }
     }
     
-    // Remover del inventario
-    setInventory(prev => prev.filter(i => i.productId !== priceModalItem.productId));
+    // Remover del inventario correspondiente
+    if (currentUser === 'store') {
+      setStoreInventory(prev => prev.filter(i => i.productId !== priceModalItem.productId));
+    } else {
+      setInventory(prev => prev.filter(i => i.productId !== priceModalItem.productId));
+    }
     setMessage(`"${priceModalItem.name}" movido a venta por $${price} c/u.`);
     
     // Limpiar modal
@@ -1714,60 +2183,322 @@ const handleDropToInventory = (e) => {
     }
   };
 
-  const handleCompleteProcessing = (warehouseId, stationIndex) => {
-    setWarehouses(prevWarehouses => {
-      const newWarehouses = prevWarehouses.map(w => {
-        if (w.id === warehouseId) {
-          const station = w.stations[stationIndex];
-          if (station) {
-            const finalProductInfo = products.find(p => p.name === station.finalProductName);
-            if (finalProductInfo) {
-              const newFinalProduct = {
-                uniqueId: `${finalProductInfo.id}-${generateId()}`,
-                productId: finalProductInfo.id,
-                name: finalProductInfo.name,
-                color: finalProductInfo.color,
-                qty : 1 //Modificar para que sea conforme a la cantidad en igualdades de los ingredientes.
-              };
-              return {
-                ...w,
-                stations: w.stations.map((s, idx) =>
-                  idx === stationIndex ? { ...s, status: 'completed', finalProduct: newFinalProduct } : s
-                ),
-              };
-            }
+  // Funciones para el sistema de solicitudes de productos
+  const openRequestModal = () => {
+    setIsRequestModalOpen(true);
+    setSelectedProducts({});
+    setRequestDestination('tienda');
+  };
+
+  const handleProductSelection = (productId, quantity, price = 0) => {
+    if (quantity <= 0) {
+      const newSelected = { ...selectedProducts };
+      delete newSelected[productId];
+      setSelectedProducts(newSelected);
+    } else {
+      setSelectedProducts(prev => ({
+        ...prev,
+        [productId]: { quantity, price: parseFloat(price) || 0 }
+      }));
+    }
+  };
+
+  const submitProductRequest = () => {
+    if (Object.keys(selectedProducts).length === 0) {
+      setMessage('Selecciona al menos un producto para enviar.');
+      return;
+    }
+
+    // Si la tienda envía a tienda, se agrega directo a su catálogo con el precio indicado
+    if (currentUser === 'store' && requestDestination === 'tienda') {
+      Object.entries(selectedProducts).forEach(([productId, data]) => {
+        const product = storeInventory.find(p => p.productId === productId);
+        if (!product) return;
+
+        setProducts(prev => {
+          const idx = prev.findIndex(p => p.productId === productId || (p.name === product.name && p.owner === 'store'));
+          if (idx !== -1) {
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              stock: (next[idx].stock || 0) + data.quantity,
+              price: data.price,
+              owner: 'store'
+            };
+            return next;
           }
-          return w;
-        }
-        return w;
+          return [...prev, {
+            id: productId,
+            productId,
+            name: product.name,
+            color: product.color,
+            stock: data.quantity,
+            price: data.price,
+            owner: 'store'
+          }];
+        });
       });
-      return newWarehouses;
+
+      // Reducir del inventario de la tienda
+      Object.entries(selectedProducts).forEach(([productId, data]) => {
+        setStoreInventory(prev => prev.map(item =>
+          item.productId === productId
+            ? { ...item, qty: Math.max(0, item.qty - data.quantity) }
+            : item
+        ).filter(item => item.qty > 0));
+      });
+
+      setIsRequestModalOpen(false);
+      setSelectedProducts({});
+      setMessage('Productos agregados a tu tienda con el precio indicado.');
+      return;
+    }
+
+    if (requestDestination === 'tienda') {
+      // Crear solicitud para la tienda
+      const request = {
+        id: generateId(),
+        from: currentUser,
+        products: Object.entries(selectedProducts).map(([productId, data]) => {
+          const baseInventory = currentUser === 'store' ? storeInventory : inventory;
+          const product = baseInventory.find(p => p.productId === productId);
+          return {
+            productId,
+            name: product?.name,
+            color: product?.color,
+            quantity: data.quantity,
+            price: data.price // Precio por unidad
+          };
+        }),
+        status: 'pending',
+        date: new Date().toISOString()
+      };
+      
+      setProductRequests(prev => [...prev, request]);
+      setMessage('Solicitud enviada a la tienda.');
+    } else {
+      // Mover directamente a venta pública
+      Object.entries(selectedProducts).forEach(([productId, data]) => {
+        const baseInventory = currentUser === 'store' ? storeInventory : inventory;
+        const product = baseInventory.find(p => p.productId === productId);
+        const existing = publicSaleProducts.find(p => p.productId === productId && p.from === currentUser);
+        
+        if (existing) {
+          setPublicSaleProducts(prev => prev.map(p =>
+            p.productId === productId && p.from === currentUser
+              ? { ...p, quantity: p.quantity + data.quantity, price: data.price }
+              : p
+          ));
+        } else {
+          setPublicSaleProducts(prev => [...prev, {
+            productId,
+            name: product.name,
+            color: product.color,
+            quantity: data.quantity,
+            from: currentUser,
+            price: data.price
+          }]);
+        }
+      });
+      setMessage('Productos movidos a venta pública.');
+    }
+
+    // Reducir del inventario correspondiente
+    if (currentUser === 'store') {
+      Object.entries(selectedProducts).forEach(([productId, data]) => {
+        setStoreInventory(prev => prev.map(item =>
+          item.productId === productId
+            ? { ...item, qty: Math.max(0, item.qty - data.quantity) }
+            : item
+        ).filter(item => item.qty > 0));
+      });
+    } else {
+      Object.entries(selectedProducts).forEach(([productId, data]) => {
+        setInventory(prev => prev.map(item =>
+          item.productId === productId
+            ? { ...item, qty: Math.max(0, item.qty - data.quantity) }
+            : item
+        ).filter(item => item.qty > 0));
+      });
+    }
+
+    setIsRequestModalOpen(false);
+    setSelectedProducts({});
+  };
+
+  const acceptProductRequest = (requestId) => {
+    const request = productRequests.find(r => r.id === requestId);
+    if (!request) return;
+
+    // Calcular total a pagar
+    const totalAmount = request.products.reduce((sum, product) => {
+      return sum + (product.quantity * (product.price || 0));
+    }, 0);
+
+
+    // Agregar productos al inventario del usuario store
+    const newInventoryItems = [];
+    request.products.forEach(product => {
+      const existing = storeInventory.find(item => item.productId === product.productId);
+      
+      if (existing) {
+        // Si ya existe en el inventario, aumentar cantidad
+        setStoreInventory(prev => prev.map(item =>
+          item.productId === product.productId
+            ? { ...item, qty: item.qty + product.quantity }
+            : item
+        ));
+      } else {
+        // Si no existe, crear nuevo item de inventario
+        newInventoryItems.push({
+          uniqueId: `${product.productId}-${generateId()}`,
+          productId: product.productId,
+          name: product.name,
+          color: product.color,
+          qty: product.quantity
+        });
+      }
     });
-    setMessage(`Proceso de ${warehouses.find(w => w.id === warehouseId)?.stations[stationIndex]?.name} completado.`);
+
+    // Agregar los nuevos items si los hay
+    if (newInventoryItems.length > 0) {
+      setStoreInventory(prev => [...prev, ...newInventoryItems]);
+    }
+    // Agregar dinero al ingreso global del usuario que envió los productos
+    setGlobalBalance(prev => ({
+      ...prev,
+      income: prev.income + totalAmount,
+      entries: [...prev.entries, {
+        id: generateId(),
+        type: 'income',
+        amount: totalAmount,
+        description: `Venta de ${request.products.length} producto(s) a tienda`,
+        timestamp: new Date().toISOString()
+      }]
+    }));
+
+    // Marcar solicitud como aceptada
+    setProductRequests(prev => prev.map(r =>
+      r.id === requestId
+        ? { ...r, status: 'accepted' }
+        : r
+    ));
+
+    setMessage(`Solicitud aceptada. Ingreso: $${totalAmount.toFixed(2)}. Los productos están en el Organizador de la tienda.`);
+  };
+
+  const rejectProductRequest = (requestId) => {
+    const request = productRequests.find(r => r.id === requestId);
+    if (!request) return;
+
+    // Marcar como rechazada
+    setProductRequests(prev => prev.map(r =>
+      r.id === requestId
+        ? { ...r, status: 'rejected' }
+        : r
+    ));
+
+    setMessage('Solicitud rechazada.');
+  };
+
+  const handleProcessingCycleComplete = (warehouseId, stationIndex, mode = 'once') => {
+    const targetWarehouse = warehouses.find(w => w.id === warehouseId);
+    const station = targetWarehouse?.stations[stationIndex];
+    if (!station) return;
+
+    const effectiveMode = mode || station.processingMode || 'once';
+
+    // Modo manual: dejar producto listo para mover manualmente
+    if (effectiveMode === 'once') {
+      const finalProductInfo = products.find(p => p.name === station.finalProductName);
+      const fallbackColor = station.finalProductColor || `hsl(${Math.random() * 360}, 70%, 80%)`;
+      const finalProduct = finalProductInfo ? {
+        uniqueId: `${finalProductInfo.id}-${generateId()}`,
+        productId: finalProductInfo.id,
+        name: finalProductInfo.name,
+        color: finalProductInfo.color,
+        qty: 1,
+      } : {
+        uniqueId: `${station.finalProductId || station.id}-${generateId()}`,
+        productId: station.finalProductId || station.id,
+        name: station.finalProductName,
+        color: fallbackColor,
+        qty: 1,
+      };
+
+      setWarehouses(prev => prev.map(w => {
+        if (w.id !== warehouseId) return w;
+        const nextStations = [...w.stations];
+        nextStations[stationIndex] = {
+          ...nextStations[stationIndex],
+          status: 'completed',
+          remainingTime: 0,
+          finalProduct,
+        };
+        return { ...w, stations: nextStations };
+      }));
+      setMessage(`Proceso de ${station.name} completado. Mueve el producto al inventario.`);
+      return;
+    }
+
+    // Modos automáticos: agregar producto final al inventario por ciclo
+    let nextInventory = addFinalProductToInventory(station, inventory);
+
+    // ¿Debemos continuar automáticamente?
+    const shouldContinue = canAutoContinue({ ...station, processingMode: effectiveMode }, nextInventory);
+    if (shouldContinue) {
+      // Consumir ingredientes para la siguiente corrida y reiniciar el temporizador
+      const updatedInventory = consumeIngredientsForStation(station, nextInventory);
+      setInventory(updatedInventory);
+      setWarehouses(prev => prev.map(w => {
+        if (w.id !== warehouseId) return w;
+        const nextStations = [...w.stations];
+        nextStations[stationIndex] = {
+          ...nextStations[stationIndex],
+          status: 'processing',
+          processingMode: effectiveMode,
+          remainingTime: nextStations[stationIndex].processingTime,
+        };
+        return { ...w, stations: nextStations };
+      }));
+      return;
+    }
+
+    // Si no continúa, persistir inventario con el producto agregado
+    setInventory(nextInventory);
+
+    // Finalizar y dejar estación en idle (producto ya se movió al inventario)
+    setWarehouses(prev => prev.map(w => {
+      if (w.id !== warehouseId) return w;
+      const nextStations = [...w.stations];
+      nextStations[stationIndex] = {
+        ...nextStations[stationIndex],
+        status: 'idle',
+        remainingTime: nextStations[stationIndex].processingTime,
+        finalProduct: null,
+      };
+      return { ...w, stations: nextStations };
+    }));
+
+    setMessage(`Proceso de ${station.name} completado y movido al inventario.`);
   };
 
   const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
     let productToAdd = null;
-    
     setWarehouses(prevWarehouses => {
       const newWarehouses = prevWarehouses.map(w => {
         if (w.id === warehouseId) {
           const newStations = [...w.stations];
           const station = newStations[stationIndex];
-          
           if (station ) {
-             const newId = generateId();
-            const newColor = `hsl(${Math.random() * 360}, 70%, 80%)`;
-                  productToAdd = {
-                  uniqueId: `${warehouseId}-${generateId()}`,
-                  productId: newId,
-                  name: station.finalProductName,
-                  color: newColor,
-                  qty : 1
-                };
-
-         
-
+            const productId = station.finalProduct?.productId || station.finalProductId || generateId();
+            const color = station.finalProduct?.color || station.finalProductColor || `hsl(${Math.random() * 360}, 70%, 80%)`;
+            productToAdd = {
+              productId,
+              name: station.finalProduct?.name || station.finalProductName,
+              color,
+              qty: station.finalProduct?.qty || 1,
+            };
             newStations[stationIndex] = {
               ...station,
               finalProduct: null,
@@ -1781,7 +2512,17 @@ const handleDropToInventory = (e) => {
       });
       return newWarehouses;
     });
-    setInventory(prevInventory => [...prevInventory, productToAdd]);
+    if (productToAdd) {
+      setInventory(prev => {
+        const idx = prev.findIndex(item => item.productId === productToAdd.productId);
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], qty: (next[idx].qty || 1) + (productToAdd.qty || 1) };
+          return next;
+        }
+        return [...prev, { ...productToAdd, uniqueId: `${productToAdd.productId}-${generateId()}` }];
+      });
+    }
     setIsModalOpen(false);
     setMessage('Producto final movido al inventario con éxito.');
   };
@@ -1805,13 +2546,17 @@ const handleDropToInventory = (e) => {
   const renderView = () => {
     switch (currentView) {
       case 'organizer':
+        // Mostrar inventario correcto según el usuario
+        const currentInventory = currentUser === 'store' ? storeInventory : inventory;
+        const setCurrentInventory = currentUser === 'store' ? setStoreInventory : setInventory;
+        
         return (
           <OrganizerView
             shelves={shelves}
             inventorySummary={getInventorySummary()}
-            inventory={inventory}
+            inventory={currentInventory}
             setShelves={setShelves}
-            setInventory={setInventory}
+            setInventory={setCurrentInventory}
             handleDragStart={handleDragStart}
             handleDragOver={handleDragOver}
             handleDragLeave={handleDragLeave}
@@ -1824,6 +2569,7 @@ const handleDropToInventory = (e) => {
             isDraggable = {isDraggable}
             moveItemToSale={moveItemToSale}
             currentUser={currentUser}
+            openRequestModal={openRequestModal}
           />
         );
       case 'register':
@@ -1833,6 +2579,7 @@ const handleDropToInventory = (e) => {
           </div>
         );
       case 'buy':
+        // La tienda muestra todos los productos para ambos usuarios
         return (
           <BuyView
             products={products}
@@ -1842,14 +2589,17 @@ const handleDropToInventory = (e) => {
             cartItems={cartItems}
             setIsCartOpen={setIsCartOpen}
             productsForSale={productsForSale}
+            publicSaleProducts={publicSaleProducts}
             currentUser={currentUser}
             removeItemFromSale={removeItemFromSale}
+            warehouses={warehouses}
           />
         );
       case 'stations':
+        // Mostrar todos los productos para ambos usuarios
         return (
           <StationsView
-            products={products}
+            inventory={inventory}
             stations={stations}
             handleStationFormSubmit={handleStationFormSubmit}
             handleDeleteStation={handleDeleteStation}
@@ -1873,8 +2623,22 @@ const handleDropToInventory = (e) => {
           />
         );
       case 'company':
+        const canSleepNow = canSleep();
         return (
-          <CompanyView company={company} createCompany={createCompany} />
+          <CompanyView 
+            company={company} 
+            createCompany={createCompany}
+            dayConfig={dayConfig}
+            setDayConfig={setDayConfig}
+            currentDayTime={currentDayTime}
+            isClockRunning={isClockRunning}
+            setIsClockRunning={setIsClockRunning}
+            currentDay={currentDay}
+            canSleep={canSleepNow}
+            finishDay={finishDay}
+            dailyBalance={dailyBalance}
+            globalBalance={globalBalance}
+          />
         );
       case 'workforce':
         return (
@@ -1906,7 +2670,7 @@ const handleDropToInventory = (e) => {
       </style>
       <header className="w-full max-w-5xl text-center mb-4 flex flex-col items-center gap-4">
         <div className="flex items-center gap-4">
-          <label className="text-sm font-semibold text-gray-700">Usuario:</label>
+          <label className="text-sm font-semibold text-gray-700">Usuario: </label>
           <div className="flex gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -1939,13 +2703,20 @@ const handleDropToInventory = (e) => {
       </header>
 
       <div className="flex justify-center space-x-2 mb-8">
-        <NavButton view="organizer" icon={LayoutGrid} label="Organizador" />
+        {currentUser === 'main' && (
+          <>
+            <NavButton view="organizer" icon={LayoutGrid} label="Organizador" />
+            <NavButton view="stations" icon={Factory} label="Estaciones" />
+            <NavButton view="warehouses" icon={Archive} label="Almacenes" />
+            <NavButton view="company" icon={Archive} label="Empresa" />
+            <NavButton view="workforce" icon={Archive} label="Fuerza Laboral" />
+          </>
+        )}
+        {currentUser === 'store' && (
+          <NavButton view="organizer" icon={LayoutGrid} label="Organizador" />
+        )}
         <NavButton view="register" icon={Box} label="Productos" />
         <NavButton view="buy" icon={ShoppingCart} label="Tienda" />
-        <NavButton view="stations" icon={Factory} label="Estaciones" />
-        <NavButton view="warehouses" icon={Archive} label="Almacenes" />
-        <NavButton view="company" icon={Archive} label="Empresa" />
-        <NavButton view="workforce" icon={Archive} label="Fuerza Laboral" />
       </div>
 
       {message && (
@@ -2004,6 +2775,198 @@ const handleDropToInventory = (e) => {
         </div>
       )}
 
+      {/* Modal para solicitud de productos */}
+      {isRequestModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto shadow-xl">
+            <h3 className="text-2xl font-bold mb-4 text-gray-800">Enviar Productos</h3>
+            
+            {/* Selector de destino - Solo para usuario main */}
+            {currentUser === 'main' && (
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label className="block text-sm font-semibold text-gray-700 mb-3">Destino</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="destination"
+                      value="tienda"
+                      checked={requestDestination === 'tienda'}
+                      onChange={() => setRequestDestination('tienda')}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-gray-700">Tienda (Solicitud)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="destination"
+                      value="publico"
+                      checked={requestDestination === 'publico'}
+                      onChange={() => setRequestDestination('publico')}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-gray-700">Venta Pública</span>
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {requestDestination === 'tienda' 
+                    ? 'Los productos se enviarán como solicitud a la tienda para su aprobación.'
+                    : 'Los productos estarán disponibles para venta directa al público.'}
+                </p>
+              </div>
+            )}
+            
+            {/* Para usuario tienda, solo muestra destino a tienda sin selector */}
+            {currentUser === 'store' && (
+              <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-sm font-semibold text-blue-800">Destino: Tu Tienda</p>
+                <p className="text-xs text-blue-600 mt-1">Los productos se agregarán a tu tienda con el precio que especifiques.</p>
+              </div>
+            )}
+
+            {/* Lista de productos disponibles */}
+            <div className="mb-4">
+              <h4 className="text-lg font-semibold text-gray-800 mb-3">Selecciona productos</h4>
+              <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                { (currentUser === 'store' ? storeInventory : inventory).length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No hay productos en el inventario</p>
+                ) : (
+                  (currentUser === 'store' ? storeInventory : inventory).map(item => (
+                    <div 
+                      key={item.productId} 
+                      className="flex flex-col p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3 flex-1">
+                          <div 
+                            className="w-10 h-10 rounded-lg" 
+                            style={{ backgroundColor: item.color }}
+                          ></div>
+                          <div>
+                            <p className="font-semibold text-gray-800">{item.name}</p>
+                            <p className="text-sm text-gray-500">Disponible: {item.qty}</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-700 mb-1 block">Cantidad</label>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                const current = selectedProducts[item.productId]?.quantity || 0;
+                                if (current > 0) {
+                                  handleProductSelection(item.productId, current - 1, selectedProducts[item.productId]?.price || 0);
+                                }
+                              }}
+                              className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded transition-colors"
+                              disabled={!(selectedProducts[item.productId]?.quantity)}
+                            >
+                              <MinusSquare size={14} />
+                            </button>
+                            <input
+                              type="number"
+                              min="0"
+                              max={item.qty}
+                              value={selectedProducts[item.productId]?.quantity || 0}
+                              onChange={(e) => {
+                                const val = Math.min(item.qty, Math.max(0, parseInt(e.target.value) || 0));
+                                handleProductSelection(item.productId, val, selectedProducts[item.productId]?.price || 0);
+                              }}
+                              className="flex-1 text-center px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                            />
+                            <button
+                              onClick={() => {
+                                const current = selectedProducts[item.productId]?.quantity || 0;
+                                if (current < item.qty) {
+                                  handleProductSelection(item.productId, current + 1, selectedProducts[item.productId]?.price || 0);
+                                }
+                              }}
+                              className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded transition-colors"
+                              disabled={(selectedProducts[item.productId]?.quantity || 0) >= item.qty}
+                            >
+                              <PlusSquare size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {(requestDestination === 'tienda' || requestDestination === 'publico') && (
+                          <div>
+                            <label className="text-xs font-semibold text-gray-700 mb-1 block">Precio/Unidad</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={selectedProducts[item.productId]?.price || 0}
+                              onChange={(e) => {
+                                handleProductSelection(item.productId, selectedProducts[item.productId]?.quantity || 0, e.target.value);
+                              }}
+                              placeholder="0.00"
+                              className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Resumen de selección */}
+            {Object.keys(selectedProducts).length > 0 && (
+              <div className="mb-4 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                <p className="text-sm font-semibold text-indigo-800 mb-2">Productos seleccionados:</p>
+                <div className="space-y-2">
+                  {Object.entries(selectedProducts).map(([productId, data]) => {
+                    const product = inventory.find(p => p.productId === productId);
+                    const total = data.quantity * (data.price || 0);
+                    return (
+                      <div key={productId} className="flex justify-between text-sm bg-white p-2 rounded">
+                        <span className="text-gray-700">{product?.name}</span>
+                        <div className="text-right">
+                          <p className="font-semibold text-indigo-700">{data.quantity} unidades</p>
+                          {requestDestination === 'tienda' && (
+                            <p className="text-xs text-indigo-600">${data.price.toFixed(2)} c/u = ${total.toFixed(2)}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {requestDestination === 'tienda' && (
+                    <div className="border-t pt-2 mt-2 font-bold flex justify-between text-indigo-800">
+                      <span>Total a recibir:</span>
+                      <span>${Object.entries(selectedProducts).reduce((sum, [, data]) => sum + (data.quantity * data.price), 0).toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setIsRequestModalOpen(false);
+                  setSelectedProducts({});
+                }}
+                className="flex-1 px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={submitProductRequest}
+                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold"
+                disabled={Object.keys(selectedProducts).length === 0}
+              >
+                {requestDestination === 'tienda' ? 'Enviar Solicitud' : 'Publicar Venta'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isModalOpen && (() => {
         const w = warehouses.find(w => w.id === selectedStation?.warehouseId);
         const st = selectedStation ? w?.stations[selectedStation.stationIndex] : null;
@@ -2046,10 +3009,12 @@ const handleDropToInventory = (e) => {
           cartItems={cartItems}
           onPurchase={handlePurchaseFromCart}
           onClose={() => setIsCartOpen(false)}
+          onUpdateCart={setCartItems}
         />
       )}
     </div>
     {isPersonalPanelVisible && (
+    
       <PersonalPanel
         personalInventory={personalInventory}
         addToPersonalInventory={addToPersonalInventory}
@@ -2059,6 +3024,13 @@ const handleDropToInventory = (e) => {
         dailyBalance={dailyBalance}
         isVisible={isPersonalPanelVisible}
         setIsVisible={setIsPersonalPanelVisible}
+        currentUser={currentUser}
+        productRequests={productRequests}
+        acceptProductRequest={acceptProductRequest}
+        rejectProductRequest={rejectProductRequest}
+        globalBalance={globalBalance}
+        publicSaleProducts={publicSaleProducts}
+        removePublicSaleProduct={removePublicSaleProduct}
       />
     )}
     {!isPersonalPanelVisible && (

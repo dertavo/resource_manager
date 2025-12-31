@@ -11,7 +11,7 @@ interface Station {
 }
 
 
-const StationsView = ({ products, stations, handleStationFormSubmit, handleDeleteStation }) => {
+const StationsView = ({ inventory, stations, handleStationFormSubmit, handleDeleteStation }) => {
   const [newStation, setNewStation] = useState<Station>({
     name: '',
     finalProductName: '',
@@ -57,20 +57,20 @@ const StationsView = ({ products, stations, handleStationFormSubmit, handleDelet
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Productos de Entrada</label>
               <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 rounded-md border border-gray-300 bg-white">
-                {products.length > 0 ? (
-                  products.map(product => (
-                    <label key={product.id} className="flex items-center space-x-2 text-sm text-gray-700">
+                {inventory.length > 0 ? (
+                  inventory.map(product => (
+                    <label key={product.productId} className="flex items-center space-x-2 text-sm text-gray-700">
                       <input
                         type="checkbox"
-                        value={product.id}
-                        checked={newStation.inputProductIds.includes(product.id)}
+                        value={product.productId}
+                        checked={newStation.inputProductIds.includes(product.productId)}
                         onChange={(e) => {
                           const checked = e.target.checked;
                           setNewStation(prevState => ({
                             ...prevState,
                             inputProductIds: checked
-                              ? [...prevState.inputProductIds, product.id]
-                              : prevState.inputProductIds.filter(id => id !== product.id),
+                              ? [...prevState.inputProductIds, product.productId]
+                              : prevState.inputProductIds.filter(id => id !== product.productId),
                           }));
                         }}
                         className="rounded text-indigo-600 focus:ring-indigo-500"
@@ -79,7 +79,7 @@ const StationsView = ({ products, stations, handleStationFormSubmit, handleDelet
                     </label>
                   ))
                 ) : (
-                  <p className="col-span-2 text-gray-500 text-center">No hay productos. Regístralos primero.</p>
+                  <p className="col-span-2 text-gray-500 text-center">No hay productos en el inventario.</p>
                 )}
               </div>
             </div>

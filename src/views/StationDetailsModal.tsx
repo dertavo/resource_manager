@@ -21,7 +21,7 @@ type Station = {
 interface Props {
   station: Station | null;
   onClose: () => void;
-  updateStationStatus: (warehouseId: string, stationIndex: number, status: string) => void;
+  updateStationStatus: (warehouseId: string, stationIndex: number, status: string, processingMode?: 'once' | 'shift' | 'stock') => void;
   handleMoveFinalProductToInventory: (warehouseId: string, stationIndex: number) => void;
   products: Product[];
   inventory: InventoryItem[];
@@ -34,6 +34,7 @@ interface Props {
 
 const StationDetailsModal: React.FC<Props> = ({ station, onClose, updateStationStatus, handleMoveFinalProductToInventory, products, inventory, company, workforce, assignActorToStation, unassignActorFromStation, assignTaskToActor }) => {
   const [taskHours, setTaskHours] = useState(8);
+  const [processingMode, setProcessingMode] = useState<'once' | 'shift' | 'stock'>('once');
   if (!station) return null;
 
   console.log(station)
@@ -43,7 +44,7 @@ const StationDetailsModal: React.FC<Props> = ({ station, onClose, updateStationS
     .filter((name: string | undefined) => name) as string[];
 
   const inventoryCounts = inventory.reduce((acc: Record<string, number>, item: InventoryItem) => {
-    acc[item.productId] = (acc[item.productId] || 0) + 1;
+    acc[item.productId] = (acc[item.productId] || 0) + (item.qty || 1);
     return acc;
   }, {});
   const hasAssignedActors = ((station.assignedWorkerIds && station.assignedWorkerIds.length > 0) || (station.assignedMachineIds && station.assignedMachineIds.length > 0));
@@ -129,13 +130,25 @@ const StationDetailsModal: React.FC<Props> = ({ station, onClose, updateStationS
             </div>
           ) : (
             <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-gray-700">Modo de procesamiento</label>
+                <select
+                  className="border p-2 rounded text-sm"
+                  value={processingMode}
+                  onChange={e => setProcessingMode(e.target.value as 'once' | 'shift' | 'stock')}
+                >
+                  <option value="once">Una sola corrida</option>
+                  <option value="shift">Mientras dure la jornada</option>
+                  <option value="stock">Mientras haya insumos</option>
+                </select>
+              </div>
               <div className="flex items-center">
                 <Clock className="mr-2 text-blue-600" />
                 <p className="font-semibold">Tiempo restante:</p>
                 <span className="ml-2 font-bold text-xl">{station.remainingTime !== undefined ? station.remainingTime : station.processingTime}s</span>
               </div>
               <button
-                onClick={() => updateStationStatus(station.warehouseId, station.stationIndex, 'processing')}
+                onClick={() => updateStationStatus(station.warehouseId, station.stationIndex, 'processing', processingMode)}
                 disabled={station.status === 'processing' || station.status === 'completed' || !canStart}
                 className={`w-full flex items-center justify-center px-4 py-2 rounded-lg text-white font-semibold transition-colors ${
                   station.status === 'processing'

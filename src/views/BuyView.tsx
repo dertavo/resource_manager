@@ -6,7 +6,7 @@ import ProductCardWithSelector from '../cards/ProductCardWithSelector';
 import ProductShop from '../components/ProductShop';
 import StationShop from '../components/StationShop';
 
-const BuyView = ({ products, setProducts, handleAddToCartAll, stations, productsForSale, currentUser, removeItemFromSale }) => {
+const BuyView = ({ products, setProducts, handleAddToCartAll, stations, productsForSale, currentUser, removeItemFromSale, publicSaleProducts }) => {
   const [productQuantities, setProductQuantities] = useState({});
   const [myProductQuantities, setMyProductQuantities] = useState({});
 
@@ -23,9 +23,17 @@ const BuyView = ({ products, setProducts, handleAddToCartAll, stations, products
     setMyProductQuantities({});
   };
 
-  // Get user's products for sale
+  // Get user's products for sale from both sources
   const userKey = currentUser === 'store' ? 'store' : 'main';
-  const myProductsForSale = productsForSale ? (productsForSale[userKey] || []) : [];
+  
+  // Productos de venta pública (enviados desde modal de solicitud)
+  const publicProducts = publicSaleProducts ? publicSaleProducts.filter(p => p.from === currentUser) : [];
+  
+  // Productos movidos a venta (desde organizador con modal de precio)
+  const myProductsForSale = productsForSale && productsForSale[userKey] ? productsForSale[userKey] : [];
+  
+  // Combinar ambas fuentes
+  const allMyProductsForSale = [...myProductsForSale, ...publicProducts];
 
     const NavButton = ({ view, icon: Icon, label }) => (
     <button
@@ -76,18 +84,18 @@ const BuyView = ({ products, setProducts, handleAddToCartAll, stations, products
       
     {renderShop()}
 
-    {/* Mis Productos en Venta Section */}
-    {myProductsForSale && myProductsForSale.length > 0 && (
+    {/* Mis Productos en Venta Section - Solo para usuario main */}
+    {currentUser === 'main' && allMyProductsForSale && allMyProductsForSale.length > 0 && (
       <div className="mt-8 pt-8 border-t-2 border-gray-200">
         <h2 className="text-2xl font-bold mb-4 text-gray-800">Mis Productos en Venta</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {myProductsForSale.map((item) => (
+          {allMyProductsForSale.map((item) => (
             <div key={item.productId} className="p-4 border-2 border-blue-300 rounded-lg bg-blue-50 hover:shadow-lg transition-shadow">
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <h3 className="font-bold text-gray-800">{item.productName}</h3>
+                  <h3 className="font-bold text-gray-800">{item.name}</h3>
                   <p className="text-sm text-gray-600">Cantidad: {item.quantity}</p>
-                  <p className="text-sm text-green-600 font-semibold">Precio: ${item.sellingPrice}</p>
+                  <p className="text-sm text-green-600 font-semibold">Precio: ${item.price}</p>
                 </div>
                 <button
                   onClick={() => removeItemFromSale && removeItemFromSale(item.productId)}

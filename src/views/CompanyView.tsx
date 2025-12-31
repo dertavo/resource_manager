@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Wallet, FileText, PlusCircle } from 'lucide-react';
+import { Building2, Wallet, FileText, PlusCircle, Clock, Play, Pause, Moon, Settings } from 'lucide-react';
 
 interface LedgerEntry {
   id: string;
@@ -16,10 +16,50 @@ interface Company {
   ledger: LedgerEntry[];
 }
 
-const CompanyView = ({ company, createCompany }: { company: Company | null; createCompany: (p: { name: string; startWithDebt: boolean; amount: number }) => void; }) => {
+interface DayConfig {
+  startHour: number;
+  endHour: number;
+  canSleepFromHour: number;
+  speedMultiplier: number;
+}
+
+interface Balance {
+  income: number;
+  expenses: number;
+  entries: any[];
+}
+
+const CompanyView = ({ 
+  company, 
+  createCompany,
+  dayConfig,
+  setDayConfig,
+  currentDayTime,
+  isClockRunning,
+  setIsClockRunning,
+  currentDay,
+  canSleep,
+  finishDay,
+  dailyBalance,
+  globalBalance
+}: { 
+  company: Company | null; 
+  createCompany: (p: { name: string; startWithDebt: boolean; amount: number }) => void;
+  dayConfig: DayConfig;
+  setDayConfig: (config: DayConfig) => void;
+  currentDayTime: number;
+  isClockRunning: boolean;
+  setIsClockRunning: (running: boolean) => void;
+  currentDay: number;
+  canSleep: boolean;
+  finishDay: () => void;
+  dailyBalance: Balance;
+  globalBalance: Balance;
+}) => {
   const [name, setName] = useState('');
   const [startWithDebt, setStartWithDebt] = useState(false);
   const [amount, setAmount] = useState(0);
+  const [showClockConfig, setShowClockConfig] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,9 +67,122 @@ const CompanyView = ({ company, createCompany }: { company: Company | null; crea
     createCompany({ name: name.trim(), startWithDebt, amount: Math.max(0, amount) });
   };
 
+  const formatTime = (hours: number) => {
+    const h = Math.floor(hours);
+    const m = Math.floor((hours - h) * 60);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${displayHour}:${m.toString().padStart(2, '0')} ${period}`;
+  };
+
   return (
-    <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div className="p-6 bg-white rounded-xl shadow-md">
+    <div className="w-full max-w-6xl space-y-6">
+      {/* Sistema de Reloj */}
+      <div className="p-6 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-lg text-white">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <Clock size={32} />
+            <div>
+              <h2 className="text-3xl font-bold">Día {currentDay}</h2>
+              <p className="text-lg">{formatTime(currentDayTime)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsClockRunning(!isClockRunning)}
+              className="px-4 py-2 bg-white text-indigo-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors flex items-center gap-2"
+            >
+              {isClockRunning ? <><Pause size={18} /> Pausar</> : <><Play size={18} /> Iniciar</>}
+            </button>
+            <button
+              onClick={() => setShowClockConfig(!showClockConfig)}
+              className="px-4 py-2 bg-white text-indigo-600 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
+            >
+              <Settings size={18} />
+            </button>
+            <button
+              onClick={finishDay}
+              className={`px-6 py-2 rounded-lg font-bold transition-colors flex items-center gap-2 shadow-lg ${
+                canSleep 
+                  ? 'bg-yellow-400 text-gray-900 hover:bg-yellow-300 animate-pulse' 
+                  : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+              }`}
+              title={canSleep ? 'Puedes dormir ahora' : 'Terminar día manualmente'}
+            >
+              <Moon size={18} /> Terminar Día {canSleep && '💤'}
+            </button>
+          </div>
+        </div>
+
+        {/* Configuración del Reloj */}
+        {showClockConfig && (
+          <div className="mt-4 p-4 bg-white bg-opacity-20 rounded-lg space-y-3">
+            <h3 className="font-semibold text-lg mb-2">Configuración del Día</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm mb-1">Hora de Inicio (0-23)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={dayConfig.startHour}
+                  onChange={(e) => setDayConfig({ ...dayConfig, startHour: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 rounded bg-white text-gray-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1">Hora de Fin (0-23)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={dayConfig.endHour}
+                  onChange={(e) => setDayConfig({ ...dayConfig, endHour: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 rounded bg-white text-gray-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1">Puede Dormir Desde (0-23)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={dayConfig.canSleepFromHour}
+                  onChange={(e) => setDayConfig({ ...dayConfig, canSleepFromHour: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 rounded bg-white text-gray-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1">Velocidad (1-3600x)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={3600}
+                  value={dayConfig.speedMultiplier}
+                  onChange={(e) => setDayConfig({ ...dayConfig, speedMultiplier: parseInt(e.target.value) || 60 })}
+                  className="w-full px-3 py-2 rounded bg-white text-gray-800"
+                />
+              </div>
+            </div>
+            <p className="text-xs mt-2 opacity-90">Velocidad: 1 minuto in-game cada {(60 / dayConfig.speedMultiplier).toFixed(1)} segundos reales</p>
+          </div>
+        )}
+
+        {/* Balance Diario vs Global */}
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="p-3 bg-white bg-opacity-20 rounded-lg">
+            <p className="text-sm opacity-90 mb-1">Balance Diario</p>
+            <p className="text-2xl font-bold">${(dailyBalance.income - dailyBalance.expenses).toFixed(2)}</p>
+          </div>
+          <div className="p-3 bg-white bg-opacity-20 rounded-lg">
+            <p className="text-sm opacity-90 mb-1">Balance Global</p>
+            <p className="text-2xl font-bold">${(globalBalance.income - globalBalance.expenses).toFixed(2)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="p-6 bg-white rounded-xl shadow-md">
         <h2 className="text-2xl font-semibold mb-4 flex items-center text-gray-800">
           <Building2 className="mr-2 text-indigo-600" /> Empresa
         </h2>
@@ -66,7 +219,7 @@ const CompanyView = ({ company, createCompany }: { company: Company | null; crea
         <h2 className="text-2xl font-semibold mb-4 flex items-center text-gray-800">
           <FileText className="mr-2 text-indigo-600" /> Ledger
         </h2>
-        <div className="space-y-2">
+        <div className="space-y-2  max-h-96 overflow-y-auto">
           {company && company.ledger && company.ledger.length > 0 ? (
             company.ledger.slice().reverse().map(entry => (
               <div key={entry.id} className="flex justify-between text-sm border-b py-2">
@@ -80,6 +233,7 @@ const CompanyView = ({ company, createCompany }: { company: Company | null; crea
             <p className="text-gray-600 text-sm">Sin movimientos.</p>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

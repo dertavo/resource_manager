@@ -6,6 +6,8 @@ interface Product {
   name: string;
   stock: number;
   color?: string;
+  displayPrice?: number;
+  price?: number;
 }
 
 interface ProductCardWithSelectorProps {
@@ -85,6 +87,15 @@ const ProductCardWithSelector: React.FC<ProductCardWithSelectorProps> = ({
 
         <div className="flex flex-col h-full">
           <h3 className="text-lg font-semibold text-gray-800 mb-2 pr-8">{product.name}</h3>
+          
+          {/* Precio */}
+          {(product.displayPrice || product.price) && (
+            <div className="mb-2">
+              <span className="text-lg font-bold text-green-600">
+                ${(product.displayPrice || product.price).toFixed(2)}
+              </span>
+            </div>
+          )}
           
           {/* Indicador de stock */}
           <div className="mb-4">
