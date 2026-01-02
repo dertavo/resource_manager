@@ -526,6 +526,7 @@ const OrganizerView: React.FC<OrganizerViewProps> = ({
 
     // 1) Si el item arrastrado desde inventario es UN "producto-estante" (tiene capacity) -> crear estante dentro del target
     if (item.type === 'grouped-inventory' && item.capacity) {
+      console.log('Creating nested shelf inside target shelf:', item, targetShelf);
       const newShelf: Shelf = {
         id: `shelf-${generateId()}`,
         items: [],
@@ -547,6 +548,7 @@ const OrganizerView: React.FC<OrganizerViewProps> = ({
 
     // 2) Si se está moviendo un SHELF existente (tipo 'shelf') -> actualizar parentId para anidarlo
     if (item.type === 'shelf') {
+      console.log('Moving shelf into another shelf:', item, targetShelf);
       const moving = item as any;
       // Evitar mover dentro de sí mismo o dentro de su propio hijo
       if (moving.uniqueId === targetShelf.uniqueId) {
@@ -575,6 +577,7 @@ const OrganizerView: React.FC<OrganizerViewProps> = ({
 
     // 3) Si es un item que viene de otro estante -> mover unidad entre estantes
     if (item.type === 'item-in-shelf') {
+      console.log('Moving item between shelves:', item, targetShelf);
       const movingItem = item as ShelfItem;
       // Si el origen y destino son el mismo, no hacer nada
       const originShelfIdx = shelves.findIndex(s => s.items.some(i => i.uniqueId === movingItem.uniqueId));
@@ -608,24 +611,47 @@ const OrganizerView: React.FC<OrganizerViewProps> = ({
 
     // 4) Si es producto normal (grouped-inventory sin capacity) -> agregar 1 unidad al estante
     if (item.type === 'grouped-inventory') {
+      console.log('Adding item to shelf:', item, targetShelf);
       changeInventoryQty(item.productId, -1, item);
-      setShelves(prev =>
-        prev.map(s =>
-          s.id === targetShelf.id
-            ? {
-                ...s,
-                items: [
-                  ...s.items,
-                  {
-                    ...item,
-                    uniqueId: `${item.productId}-${Date.now()}`,
-                    qty: 1
-                  }
-                ]
-              }
-            : s
-        )
+      
+       setShelves(prev =>
+    prev.map(s => {
+      if (s.id !== targetShelf.id) return s;
+
+      const existingIndex = s.items.findIndex(
+        i => i.productId === item.productId
       );
+
+      // 2️⃣ Si ya existe → incrementar qty
+      if (existingIndex !== -1) {
+        const updatedItems = [...s.items];
+        updatedItems[existingIndex] = {
+          ...updatedItems[existingIndex],
+          qty: (updatedItems[existingIndex].qty || 0) + 1,
+        };
+
+        return {
+          ...s,
+          items: updatedItems,
+        };
+      }
+
+      // 3️⃣ Si no existe → agregar nuevo
+      return {
+        ...s,
+        items: [
+          ...s.items,
+          {
+            ...item,
+            uniqueId: item.uniqueId || `${item.productId}-${Date.now()}`,
+            qty: 1,
+          },
+        ],
+      };
+    })
+  );
+
+
       setMessage('Elemento movido al estante');
       cleanup();
       return;
@@ -722,21 +748,51 @@ const handleDropToShelf = (
 };
 
 // Mover del estante al inventario (suma 1 al inventario, elimina solo la unidad del estante)
-const handleDropItemToInventory = (e: React.DragEvent<HTMLDivElement> | SyntheticDropEvent) => {
+const handleDropItemToInventory = (
+  e: React.DragEvent<HTMLDivElement> | SyntheticDropEvent
+) => {
   e.preventDefault();
+
   const item = getDraggedItemFromEvent(e);
   if (!item) return;
 
   if (item.type === 'item-in-shelf') {
+    // 1️⃣ Actualizar shelves correctamente
     setShelves(prev =>
-      prev.map(shelf => ({ ...shelf, items: shelf.items.filter(i => i.uniqueId !== item.uniqueId) }))
+      prev.map(shelf => {
+        const index = shelf.items.findIndex(
+          i => i.uniqueId === item.uniqueId
+        );
+
+        if (index === -1) return shelf;
+
+        const items = [...shelf.items];
+        const current = items[index];
+
+        // ➖ Reducir qty o eliminar
+        if ((current.qty || 1) > 1) {
+          items[index] = {
+            ...current,
+            qty: current.qty - 1,
+          };
+        } else {
+          items.splice(index, 1);
+        }
+
+        return { ...shelf, items };
+      })
     );
-    // Sumar 1 al inventario (helper)
+
+    // 2️⃣ Sumar al inventario global
     changeInventoryQty(item.productId, 1, item);
+
+    // 3️⃣ Feedback UI
     setMessage('Elemento devuelto al inventario');
   }
+
   cleanup();
 };
+
 
 // Basurero interno: resta 1 del inventario o elimina item del estante (1 unidad)
 const handleDropToTrashInternal = (e: React.DragEvent<HTMLDivElement> | SyntheticDropEvent) => {
@@ -846,8 +902,8 @@ const handleDropToTrashInternal = (e: React.DragEvent<HTMLDivElement> | Syntheti
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
               >
-                {item.name}
-              </div>
+                {item.name} ({item.qty})
+              </div >
             ))
           ) : (
             <span className="text-gray-500 text-xs">Vacío</span>

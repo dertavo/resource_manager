@@ -4,6 +4,8 @@ import { LayoutGrid, Factory, Box, ShoppingCart, Archive, PlusSquare, MinusSquar
 type Product = { id: string; name: string; color?: string };
 type InventoryItem = { productId: string; qty?: number; uniqueId?: string };
 type Actor = { id: string; type: 'human' | 'machine'; name: string; hourlyCost?: number };
+
+
 type Station = {
   id: string;
   name: string;
@@ -16,6 +18,7 @@ type Station = {
   stationIndex: number;
   assignedWorkerIds?: string[];
   assignedMachineIds?: string[];
+  stopedRequest : boolean;
 };
 
 interface Props {
@@ -36,8 +39,6 @@ const StationDetailsModal: React.FC<Props> = ({ station, onClose, updateStationS
   const [taskHours, setTaskHours] = useState(8);
   const [processingMode, setProcessingMode] = useState<'once' | 'shift' | 'stock'>('once');
   if (!station) return null;
-
-  console.log(station)
 
   const inputProductNames = station.inputProductIds
     .map((id: string) => products.find((p: Product) => p.id === id)?.name)
@@ -149,19 +150,21 @@ const StationDetailsModal: React.FC<Props> = ({ station, onClose, updateStationS
               </div>
               <button
                 onClick={() => updateStationStatus(station.warehouseId, station.stationIndex, 'processing', processingMode)}
-                disabled={station.status === 'processing' || station.status === 'completed' || !canStart}
+                disabled={station.status === 'stopping' ||  station.status === 'completed' || !canStart}
                 className={`w-full flex items-center justify-center px-4 py-2 rounded-lg text-white font-semibold transition-colors ${
                   station.status === 'processing'
-                    ? 'bg-yellow-500 cursor-not-allowed'
-                    : station.status === 'completed'
-                      ? 'bg-green-500 cursor-not-allowed'
-                      : !canStart
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-green-500 hover:bg-green-600'
-                }`}
+                ? 'bg-yellow-500 cursor-not-allowed'
+                : station.status === 'completed'
+                  ? 'bg-green-500 cursor-not-allowed'
+                  : station.status === 'stopping'
+                    ? 'bg-orange-500 cursor-not-allowed'
+                    : !canStart
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-green-500 hover:bg-green-600'
+                            }`}
               >
                 <Play size={18} className="mr-2"/>
-                {station.status === 'processing' ? 'Procesando...' : station.status === 'completed' ? 'Completado' : 'Iniciar'}
+                {station.status === 'processing' ? 'Procesando...' :  station.status === 'completed'  ? 'Completado' : station.status === 'stopping' ? 'Deteniendo...' : 'Iniciar'}
               </button>
             </div>
           )}

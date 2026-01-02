@@ -113,6 +113,13 @@ const StationsView = ({ inventory, stations, handleStationFormSubmit, handleDele
                     <p className="text-sm text-gray-600">
                       <span className="font-medium">Produce:</span> {station.finalProductName}
                     </p>
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium">Ingredientes:</span>{" "}
+                      {station.inputProductIds
+                        .map(id => inventory.find(p => p.productId === id)?.name)
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
                      <p className="text-sm text-gray-600">
                       <span className="font-medium">Costo: $</span>{station.cost}
                     </p>

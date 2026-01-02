@@ -67,6 +67,18 @@ const CompanyView = ({
     createCompany({ name: name.trim(), startWithDebt, amount: Math.max(0, amount) });
   };
 
+  const [openDates, setOpenDates] = useState<Record<string, boolean>>({});
+
+  const toggleDate = (date: string) => {
+    setOpenDates(prev => ({
+      ...prev,
+      [date]: !prev[date],
+    }));
+  };
+
+  
+
+
   const formatTime = (hours: number) => {
     const h = Math.floor(hours);
     const m = Math.floor((hours - h) * 60);
@@ -74,6 +86,27 @@ const CompanyView = ({
     const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
     return `${displayHour}:${m.toString().padStart(2, '0')} ${period}`;
   };
+
+  const groupedLedger = company?.ledger?.reduce((acc: Record<string, LedgerEntry[]>, entry) => {
+  const dateKey = new Date(entry.date).toISOString().split("T")[0]; // 2025-01-30
+
+
+
+    if (!acc[dateKey]) {
+      acc[dateKey] = [];
+    }
+
+    acc[dateKey].push(entry);
+    return acc;
+  }, {});
+
+  const groupedEntries = groupedLedger
+  ? Object.entries(groupedLedger).sort(
+      ([a], [b]) => new Date(b).getTime() - new Date(a).getTime()
+    )
+  : [];
+
+
 
   return (
     <div className="w-full max-w-6xl space-y-6">
@@ -215,24 +248,60 @@ const CompanyView = ({
         )}
       </div>
 
+      
+
       <div className="p-6 bg-white rounded-xl shadow-md">
         <h2 className="text-2xl font-semibold mb-4 flex items-center text-gray-800">
           <FileText className="mr-2 text-indigo-600" /> Ledger
         </h2>
-        <div className="space-y-2  max-h-96 overflow-y-auto">
-          {company && company.ledger && company.ledger.length > 0 ? (
-            company.ledger.slice().reverse().map(entry => (
-              <div key={entry.id} className="flex justify-between text-sm border-b py-2">
+<div className="space-y-3 max-h-96 overflow-y-auto">
+  {groupedEntries.length > 0 ? (
+    groupedEntries.map(([date, entries]) => (
+      <div key={date} className="border rounded-md">
+        
+        {/* Header fecha */}
+        <button
+          onClick={() => toggleDate(date)}
+          className="w-full flex justify-between items-center px-3 py-2 bg-gray-100 hover:bg-gray-200 text-sm font-semibold"
+        >
+          <span>
+            {new Date(date).toLocaleDateString()}
+          </span>
+          <span>
+            {openDates[date] ? "−" : "+"}
+          </span>
+        </button>
+
+        {/* Contenido colapsable */}
+        {openDates[date] && (
+          <div className="divide-y">
+           {entries
+            .slice()
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .map(entry => (
+              <div
+                key={entry.id}
+                className="flex justify-between text-sm px-3 py-2"
+              >
                 <span className="capitalize">{entry.type}</span>
                 <span>${entry.amount.toFixed(2)}</span>
-                <span className="flex-1 ml-2 text-gray-600">{entry.description}</span>
-                <span className="ml-2 text-gray-500">{new Date(entry.date).toLocaleString()}</span>
+                <span className="flex-1 ml-2 text-gray-600">
+                  {entry.description}
+                </span>
+                <span className="ml-2 text-gray-500">
+                  {new Date(entry.date).toLocaleTimeString()}
+                </span>
               </div>
-            ))
-          ) : (
-            <p className="text-gray-600 text-sm">Sin movimientos.</p>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ))
+  ) : (
+    <p className="text-gray-600 text-sm">Sin movimientos.</p>
+  )}
+</div>
+
       </div>
       </div>
     </div>

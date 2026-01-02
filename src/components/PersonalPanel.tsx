@@ -53,6 +53,7 @@ interface PublicSaleProduct {
 }
 
 const PersonalPanel = ({
+  inventory,
   personalInventory,
   addToPersonalInventory,
   removeFromPersonalInventory,
@@ -70,6 +71,7 @@ const PersonalPanel = ({
   removePublicSaleProduct,
   
 }: {
+  inventory: Item[];
   personalInventory: Item[];
   addToPersonalInventory: (item: Item) => void;
   removeFromPersonalInventory: (uniqueId: string) => void;
@@ -237,7 +239,7 @@ const PersonalPanel = ({
           onDragLeave={handleDragLeave}
         >
           {Array.from({ length: 4 }).map((_, i) => {
-            const item = personalInventory[i];
+            const item = inventory[i];
             return (
               <div
                 key={i}
