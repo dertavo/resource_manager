@@ -1,4 +1,5 @@
-import { generateId } from '../utils/id';
+import { generateId } from '../utils/id.js';
+import { normalizeRecipe } from './stations.js';
 
 export const getAvailableItems = (inventory, shelves) => {
   const shelvedItemIds = shelves.flatMap(shelf =>
@@ -15,25 +16,32 @@ export const getInventoryCount = (productId, inventory) =>
   );
 
 export const hasEnoughIngredients = (station, inventory) =>
-  (station?.inputProductIds || []).every(
-    productId => getInventoryCount(productId, inventory) > 0,
+  normalizeRecipe(station).every(
+    item => getInventoryCount(item.productId, inventory) >= item.quantity,
   );
 
 export const consumeIngredients = (station, inventory) => {
   const nextInventory = [...inventory];
 
-  (station?.inputProductIds || []).forEach(productId => {
-    const index = nextInventory.findIndex(
-      item => item.productId === productId && (item.qty || 1) > 0,
-    );
-    if (index === -1) return;
+  normalizeRecipe(station).forEach(recipeItem => {
+    let unitsToConsume = recipeItem.quantity;
+    while (unitsToConsume > 0) {
+      const index = nextInventory.findIndex(
+        item =>
+          item.productId === recipeItem.productId && (item.qty || 1) > 0,
+      );
+      if (index === -1) break;
 
-    const item = nextInventory[index];
-    const remaining = (item.qty || 1) - 1;
-    if (remaining <= 0) {
-      nextInventory.splice(index, 1);
-    } else {
-      nextInventory[index] = { ...item, qty: remaining };
+      const item = nextInventory[index];
+      const available = item.qty || 1;
+      const consumed = Math.min(available, unitsToConsume);
+      const remaining = available - consumed;
+      unitsToConsume -= consumed;
+      if (remaining <= 0) {
+        nextInventory.splice(index, 1);
+      } else {
+        nextInventory[index] = { ...item, qty: remaining };
+      }
     }
   });
 
@@ -72,12 +80,16 @@ export const canAutoContinue = (station, inventory, workforce) => {
 
 export const addFinalProduct = (station, inventory) => {
   const productId = station.finalProductId || station.id;
+  const outputQuantity = Math.max(1, Number(station.outputQuantity) || 1);
   const index = inventory.findIndex(item => item.productId === productId);
 
   if (index !== -1) {
     const nextInventory = [...inventory];
     const item = nextInventory[index];
-    nextInventory[index] = { ...item, qty: (item.qty || 1) + 1 };
+    nextInventory[index] = {
+      ...item,
+      qty: (item.qty || 1) + outputQuantity,
+    };
     return nextInventory;
   }
 
@@ -88,7 +100,7 @@ export const addFinalProduct = (station, inventory) => {
       productId,
       name: station.finalProductName,
       color: station.finalProductColor || `hsl(${Math.random() * 360}, 70%, 80%)`,
-      qty: 1,
+      qty: outputQuantity,
     },
   ];
 };

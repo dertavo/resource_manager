@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { Archive, Box, Factory, LayoutGrid, ShoppingCart } from 'lucide-react';
+import { Archive, Bot, Box, Factory, LayoutGrid, ShoppingCart } from 'lucide-react';
 
 const navigationByUser = {
   main: [
@@ -8,6 +8,7 @@ const navigationByUser = {
     ['warehouses', Archive, 'Almacenes'],
     ['company', Archive, 'Empresa'],
     ['workforce', Archive, 'Fuerza Laboral'],
+    ['automation', Bot, 'Automatización'],
     ['register', Box, 'Productos'],
     ['buy', ShoppingCart, 'Tienda'],
   ],

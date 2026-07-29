@@ -11,6 +11,7 @@ import useDayClock from './hooks/useDayClock';
 import useOrganization from './hooks/useOrganization';
 import useStationTimers from './hooks/useStationTimers';
 import useTheme from './hooks/useTheme';
+import useDeterministicAgents from './hooks/useDeterministicAgents';
 import usePersistentState, { rawStringStorage } from './hooks/usePersistentState';
 import {
   actorsHaveHoursLeft as assignedActorsHaveHoursLeft,
@@ -21,6 +22,10 @@ import {
   hasEnoughIngredients,
 } from './domain/inventory';
 import { generateId } from './utils/id';
+import {
+  buildStationInstance,
+  normalizeBlueprint,
+} from './domain/stations';
 
 
 
@@ -40,7 +45,7 @@ const App = () => {
 
   // Efecto para validar que el usuario tienda no acceda a vistas restringidas
   useEffect(() => {
-    const restrictedViews = ['organizer', 'stations', 'warehouses', 'company', 'workforce'];
+    const restrictedViews = ['organizer', 'stations', 'warehouses', 'company', 'workforce', 'automation'];
     if (currentUser === 'store' && restrictedViews.includes(currentView)) {
       setCurrentView('register'); // Redirigir a una vista permitida
     }
@@ -49,6 +54,10 @@ const App = () => {
   const [products, setProducts] = usePersistentState('products', []);
   const [shelves, setShelves] = usePersistentState('shelves', []);
   const [stations, setStations] = usePersistentState('stations', []);
+  const [stationBlueprints, setStationBlueprints] = usePersistentState(
+    'stationBlueprints',
+    [],
+  );
   const [warehouses, setWarehouses] = usePersistentState('warehouses', []);
   const [inventory, setInventory] = usePersistentState('inventory', []);
   const [storeInventory, setStoreInventory] = usePersistentState('storeInventory', []);
@@ -98,6 +107,8 @@ const App = () => {
     setMessage,
     setWarehouses,
     currentTimestamp,
+    currentDay,
+    warehouses,
   });
   const [productsForSale, setProductsForSale] = usePersistentState('productsForSale', {
     store: [],
@@ -136,6 +147,64 @@ const App = () => {
     'publicSaleProducts',
     [],
   );
+
+  useEffect(() => {
+    const legacyStations = [
+      ...stations,
+      ...warehouses.flatMap(warehouse => warehouse.stations.filter(Boolean)),
+    ];
+    if (stationBlueprints.length > 0 || legacyStations.length === 0) return;
+    const migratedBlueprints = Array.from(
+      new Map(
+        legacyStations.map(station => {
+          const blueprint = normalizeBlueprint(station);
+          return [blueprint.id, blueprint];
+        }),
+      ).values(),
+    );
+    setStationBlueprints(migratedBlueprints);
+    setStations(previous => previous.map(station => {
+      const blueprint = normalizeBlueprint(station);
+      return {
+        ...station,
+        ...blueprint,
+        id: station.id,
+        blueprintId: blueprint.id,
+      };
+    }));
+    setWarehouses(previous => previous.map(warehouse => ({
+      ...warehouse,
+      stations: warehouse.stations.map(station => {
+        if (!station) return station;
+        const blueprint = normalizeBlueprint(station);
+        return {
+          ...station,
+          ...blueprint,
+          id: station.id,
+          blueprintId: blueprint.id,
+        };
+      }),
+    })));
+  }, [
+    setStationBlueprints,
+    setStations,
+    setWarehouses,
+    stationBlueprints.length,
+    stations,
+    warehouses,
+  ]);
+
+  useEffect(() => {
+    if (isClockRunning) return;
+    setWarehouses(previous => previous.map(warehouse => ({
+      ...warehouse,
+      stations: warehouse.stations.map(station =>
+        station?.processingMode === 'shift' && station.status === 'processing'
+          ? { ...station, status: 'waiting-shift' }
+          : station
+      ),
+    })));
+  }, [currentDay, isClockRunning, setWarehouses]);
 
   const hasEnoughIngredientsForStation = (station, inv = inventory) =>
     hasEnoughIngredients(station, inv);
@@ -413,13 +482,17 @@ const handleDropToInventory = (e) => {
     });
     if (found) {
       setWarehouses(updatedWarehouses);
-      setStations(prevStations => [...prevStations, {
-        id: draggedItem.id,
-        name: draggedItem.name,
-        finalProductName: draggedItem.finalProductName,
-        inputProductIds: draggedItem.inputProductIds,
-        processingTime: draggedItem.processingTime,
-      }]);
+      setStations(prevStations => [
+        ...prevStations,
+        {
+          ...draggedItem,
+          type: undefined,
+          status: 'idle',
+          remainingTime: draggedItem.processingTime,
+          assignedWorkerIds: [],
+          assignedMachineIds: [],
+        },
+      ]);
       setMessage(`"${draggedItem.name}" ha sido movida de vuelta a la lista de estaciones disponibles.`);
     }
     setDraggedItem(null);
@@ -550,7 +623,7 @@ const handleDropToInventory = (e) => {
         type: 'expense',
         amount: totalCost,
         description: `Compra de ${cartItems.length} producto(s)`,
-        timestamp: new Date().toISOString()
+        timestamp: currentTimestamp
       }]
     }));
     
@@ -560,22 +633,74 @@ const handleDropToInventory = (e) => {
   };
 
   const handleStationFormSubmit = (newStation) => {
-    if (!newStation.name || !newStation.finalProductName || newStation.inputProductIds.length === 0) {
+    if (!newStation.name || !newStation.finalProductName || newStation.recipe.length === 0) {
       setMessage('Por favor, completa todos los campos de la estación y selecciona al menos un producto.');
       return;
     }
-    const processingTime = newStation.inputProductIds.length * 10;
     const existingFinalProduct = products.find(p => p.name === newStation.finalProductName);
-    const finalProductId = existingFinalProduct ? existingFinalProduct.id : generateId();
-    const finalProductColor = existingFinalProduct ? existingFinalProduct.color : `hsl(${Math.random() * 360}, 70%, 80%)`;
-    const station = { id: generateId(), ...newStation, processingTime, processingMode: 'once', finalProductId, finalProductColor };
-    setStations(prevStations => [...prevStations, station]);
-    setMessage(`Estación "${station.name}" creada con éxito.`);
+    const finalProductId = existingFinalProduct?.id
+      || newStation.finalProductId
+      || generateId();
+    const finalProductColor = existingFinalProduct?.color
+      || newStation.finalProductColor
+      || `hsl(${Math.random() * 360}, 70%, 80%)`;
+    const blueprint = normalizeBlueprint({
+      ...newStation,
+      id: newStation.id || generateId(),
+      finalProductId,
+      finalProductColor,
+    });
+    setStationBlueprints(previous => {
+      const exists = previous.some(item => item.id === blueprint.id);
+      return exists
+        ? previous.map(item => item.id === blueprint.id ? blueprint : item)
+        : [...previous, blueprint];
+    });
+    setMessage(`Plano "${blueprint.name}" guardado con éxito.`);
   };
 
-  const handleDeleteStation = (stationId) => {
-    setStations(prevStations => prevStations.filter(s => s.id !== stationId));
-    setMessage('Estación eliminada con éxito.');
+  const handleDeleteStation = (blueprintId) => {
+    const hasInstances = stations.some(station => station.blueprintId === blueprintId)
+      || warehouses.some(warehouse =>
+        warehouse.stations.some(station => station?.blueprintId === blueprintId)
+      );
+    if (hasInstances) {
+      setMessage('No puedes eliminar un plano mientras existan unidades construidas.');
+      return;
+    }
+    setStationBlueprints(previous => previous.filter(item => item.id !== blueprintId));
+    setMessage('Plano eliminado con éxito.');
+  };
+
+  const handleBuildStation = blueprintId => {
+    const blueprint = stationBlueprints.find(item => item.id === blueprintId);
+    if (!blueprint) return;
+    if (!company) {
+      setMessage('Crea una empresa antes de construir estaciones.');
+      return;
+    }
+    const constructionCost = Number(blueprint.constructionCost) || 0;
+    if ((company.capital || 0) < constructionCost) {
+      setMessage(`Capital insuficiente. Se requieren $${constructionCost.toFixed(2)}.`);
+      return;
+    }
+    const station = buildStationInstance(blueprint);
+    setCompany(previous => ({
+      ...previous,
+      capital: (previous.capital || 0) - constructionCost,
+      ledger: [
+        ...(previous.ledger || []),
+        {
+          id: generateId(),
+          type: 'expense',
+          amount: constructionCost,
+          description: `Construcción de estación: ${blueprint.name}`,
+          date: currentTimestamp,
+        },
+      ],
+    }));
+    setStations(previous => [...previous, station]);
+    setMessage(`Unidad de "${blueprint.name}" construida y disponible.`);
   };
 
   const handleWarehouseFormSubmit = (newWarehouse) => {
@@ -602,11 +727,18 @@ const handleDropToInventory = (e) => {
     }
   };
 
-  const updateStationStatus = (warehouseId, stationIndex, newStatus, processingMode = 'once') => {
+  const updateStationStatus = (
+    warehouseId,
+    stationIndex,
+    newStatus,
+    processingMode = 'once',
+    options = { autoStartWorkday: true },
+  ) => {
     const station = warehouses.find(w => w.id === warehouseId)?.stations[stationIndex];
     let stoping = false;
+    const isResumingShift =
+      station?.status === 'waiting-shift' && station?.cycleInProgress;
     if (newStatus === 'processing' && station) {
-
       //Lógica para dentener el proceso mientras está procesado.
     
  
@@ -615,7 +747,15 @@ const handleDropToInventory = (e) => {
         setMessage('Asigna personal o máquinas a la estación antes de iniciar.');
         return;
       }
-      if (!hasEnoughIngredientsForStation(station)) {
+      if (station.requiresWorker && !(station.assignedWorkerIds || []).length) {
+        setMessage('Esta estación requiere al menos un trabajador.');
+        return;
+      }
+      if (station.requiresMachine && !(station.assignedMachineIds || []).length) {
+        setMessage('Esta estación requiere al menos una máquina.');
+        return;
+      }
+      if (!isResumingShift && !hasEnoughIngredientsForStation(station)) {
         setMessage('¡Inventario insuficiente! No se puede iniciar la producción.');
         return;
       }
@@ -623,13 +763,33 @@ const handleDropToInventory = (e) => {
         setMessage('La jornada asignada ya está completa para este equipo.');
         return;
       }
+      if (processingMode === 'shift' && !isClockRunning) {
+        if (options.autoStartWorkday === false) {
+          setWarehouses(previous => previous.map(warehouse => ({
+            ...warehouse,
+            stations: warehouse.stations.map((entry, index) =>
+              warehouse.id === warehouseId && index === stationIndex
+                ? { ...entry, status: 'waiting-shift', processingMode: 'shift' }
+                : entry
+            ),
+          })));
+          setMessage('Producción programada para la próxima jornada.');
+          return;
+        }
+        setIsClockRunning(true);
+        setMessage('Jornada iniciada automáticamente para comenzar la producción.');
+      }
       if(station.status ==='processing'){
         stoping = true;
         newStatus ='stopping';
-      }else{
+      } else if (!isResumingShift) {
         const consumedInventory = consumeIngredientsForStation(station);
         setInventory(consumedInventory);
-        setMessage(`Se consumieron ${station.inputProductIds.length} productos para iniciar la producción de "${station.finalProductName}".`);
+        const consumedUnits = (station.recipe || []).reduce(
+          (sum, item) => sum + (item.quantity || 1),
+          0,
+        ) || station.inputProductIds.length;
+        setMessage(`Se consumieron ${consumedUnits} insumos para iniciar la producción de "${station.finalProductName}".`);
       }
       
     }
@@ -643,7 +803,14 @@ const handleDropToInventory = (e) => {
               status: newStatus,
               stopRequested: stoping,
               processingMode: processingMode || newStations[stationIndex].processingMode || 'once',
-              remainingTime: newStatus === 'processing' ? newStations[stationIndex].processingTime : newStations[stationIndex].remainingTime,
+              cycleInProgress: newStatus === 'processing'
+                ? true
+                : newStations[stationIndex].cycleInProgress,
+              remainingTime: newStatus === 'processing'
+                ? (isResumingShift
+                    ? newStations[stationIndex].remainingTime
+                    : newStations[stationIndex].processingTime)
+                : newStations[stationIndex].remainingTime,
             };
           }
           return { ...w, stations: newStations };
@@ -884,7 +1051,7 @@ const handleDropToInventory = (e) => {
           };
         }),
         status: 'pending',
-        date: new Date().toISOString()
+        date: currentTimestamp
       };
       
       setProductRequests(prev => [...prev, request]);
@@ -986,7 +1153,7 @@ const handleDropToInventory = (e) => {
         type: 'income',
         amount: totalAmount,
         description: `Venta de ${request.products.length} producto(s) a tienda`,
-        timestamp: new Date().toISOString()
+        timestamp: currentTimestamp
       }]
     }));
 
@@ -1032,13 +1199,13 @@ const handleDropToInventory = (e) => {
         productId: finalProductInfo.id,
         name: finalProductInfo.name,
         color: finalProductInfo.color,
-        qty: 1,
+        qty: Math.max(1, Number(station.outputQuantity) || 1),
       } : {
         uniqueId: `${station.finalProductId || station.id}-${generateId()}`,
         productId: station.finalProductId || station.id,
         name: station.finalProductName,
         color: fallbackColor,
-        qty: 1,
+        qty: Math.max(1, Number(station.outputQuantity) || 1),
       };
 
       setWarehouses(prev => prev.map(w => {
@@ -1049,6 +1216,8 @@ const handleDropToInventory = (e) => {
           status: 'completed',
           remainingTime: 0,
           finalProduct,
+          cycleInProgress: false,
+          cyclesCompleted: (nextStations[stationIndex].cyclesCompleted || 0) + 1,
         };
         return { ...w, stations: nextStations };
       }));
@@ -1075,6 +1244,8 @@ const handleDropToInventory = (e) => {
           status: 'processing',
           processingMode: effectiveMode,
           remainingTime: nextStations[stationIndex].processingTime,
+          cycleInProgress: true,
+          cyclesCompleted: (nextStations[stationIndex].cyclesCompleted || 0) + 1,
         };
         return { ...w, stations: nextStations };
       }));
@@ -1094,6 +1265,8 @@ const handleDropToInventory = (e) => {
         status: 'idle',
         remainingTime: nextStations[stationIndex].processingTime,
         finalProduct: null,
+        cycleInProgress: false,
+        cyclesCompleted: (nextStations[stationIndex].cyclesCompleted || 0) + 1,
       };
       return { ...w, stations: nextStations };
     }));
@@ -1120,7 +1293,8 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
       station.finalProduct?.color ??
       station.finalProductColor ??
       `hsl(${Math.random() * 360}, 70%, 80%)`,
-    qty: station.finalProduct?.qty ?? 1,
+    qty: station.finalProduct?.qty
+      ?? Math.max(1, Number(station.outputQuantity) || 1),
   };
 
   //Limpiar estación / resetear ciclo (PURO)
@@ -1137,6 +1311,7 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
         finalProduct: null,
         status: 'idle',
         remainingTime: s.processingTime,
+        cycleInProgress: false,
       };
 
       return { ...w, stations };
@@ -1175,6 +1350,30 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
     setWorkforce,
     onCycleComplete: handleProcessingCycleComplete,
     currentTimestamp,
+    isClockRunning,
+    speedMultiplier: dayConfig.speedMultiplier,
+  });
+
+  const {
+    automationConfig,
+    setAutomationConfig,
+    automationLog,
+    clearAutomationLog,
+  } = useDeterministicAgents({
+    company,
+    currentTimestamp,
+    inventory,
+    isClockRunning,
+    products,
+    shelves,
+    warehouses,
+    setCompany,
+    setDailyBalance,
+    setInventory,
+    setIsClockRunning,
+    setProducts,
+    setShelves,
+    startStation: updateStationStatus,
   });
 
   return (
@@ -1264,6 +1463,7 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
         shelves={shelves}
         setShelves={setShelves}
         stations={stations}
+        stationBlueprints={stationBlueprints}
         setStations={setStations}
         warehouses={warehouses}
         products={products}
@@ -1284,6 +1484,8 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
         currentDate={currentDate}
         dailyBalance={dailyBalance}
         globalBalance={globalBalance}
+        automationConfig={automationConfig}
+        automationLog={automationLog}
         canSleep={canSleep}
         finishDay={finishDay}
         actions={{
@@ -1304,6 +1506,7 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
           removeItemFromSale,
           handleStationFormSubmit,
           handleDeleteStation,
+          handleBuildStation,
           handleWarehouseFormSubmit,
           handleStationDrop,
           handleDropToAvailableStations,
@@ -1312,6 +1515,8 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
           updateCompany,
           deleteCompany,
           addActor,
+          setAutomationConfig,
+          clearAutomationLog,
         }}
       />
 

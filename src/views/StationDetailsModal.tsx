@@ -14,6 +14,12 @@ type Station = {
   status: string;
   remainingTime?: number;
   processingTime: number;
+  recipe?: { productId: string; quantity: number }[];
+  constructionCost?: number;
+  outputQuantity?: number;
+  processingMode?: 'once' | 'shift' | 'stock';
+  requiresWorker?: boolean;
+  requiresMachine?: boolean;
   warehouseId: string;
   stationIndex: number;
   assignedWorkerIds?: string[];
@@ -37,22 +43,26 @@ interface Props {
 
 const StationDetailsModal: React.FC<Props> = ({ station, onClose, updateStationStatus, handleMoveFinalProductToInventory, products, inventory, company, workforce, assignActorToStation, unassignActorFromStation, assignTaskToActor }) => {
   const [taskHours, setTaskHours] = useState(8);
-  const [processingMode, setProcessingMode] = useState<'once' | 'shift' | 'stock'>('once');
+  const [processingMode, setProcessingMode] = useState<'once' | 'shift' | 'stock'>(
+    station?.processingMode || 'once',
+  );
   if (!station) return null;
-
-  const inputProductNames = station.inputProductIds
-    .map((id: string) => products.find((p: Product) => p.id === id)?.name)
-    .filter((name: string | undefined) => name) as string[];
 
   const inventoryCounts = inventory.reduce((acc: Record<string, number>, item: InventoryItem) => {
     acc[item.productId] = (acc[item.productId] || 0) + (item.qty || 1);
     return acc;
   }, {});
   const hasAssignedActors = ((station.assignedWorkerIds && station.assignedWorkerIds.length > 0) || (station.assignedMachineIds && station.assignedMachineIds.length > 0));
-  const canStartProcessing = station.inputProductIds.every((inputProductId: string) =>
-    (inventoryCounts[inputProductId] || 0) >= 1
+  const recipe = station.recipe?.length
+    ? station.recipe
+    : station.inputProductIds.map(productId => ({ productId, quantity: 1 }));
+  const canStartProcessing = recipe.every(item =>
+    (inventoryCounts[item.productId] || 0) >= item.quantity
   );
-  const canStart = canStartProcessing && hasAssignedActors;
+  const requirementsSatisfied =
+    (!station.requiresWorker || Boolean(station.assignedWorkerIds?.length))
+    && (!station.requiresMachine || Boolean(station.assignedMachineIds?.length));
+  const canStart = canStartProcessing && hasAssignedActors && requirementsSatisfied;
 
   const assignedWorkers = workforce.filter((a: Actor) => station.assignedWorkerIds?.includes(a.id));
   const assignedMachines = workforce.filter((a: Actor) => station.assignedMachineIds?.includes(a.id));
@@ -72,17 +82,48 @@ const StationDetailsModal: React.FC<Props> = ({ station, onClose, updateStationS
           <div className="flex flex-col">
             <p className="flex items-center mb-2"><Box className="mr-2 text-green-600" /> **Ingredientes:**</p>
             <ul className="list-disc list-inside ml-4 text-sm">
-              {inputProductNames.map((name: string, index: number) => (
-                <li key={index}>{name}</li>
+              {recipe.map((item, index: number) => (
+                <li key={index}>
+                  {item.quantity} × {products.find((product: Product) => product.id === item.productId)?.name || item.productId}
+                </li>
               ))}
             </ul>
           </div>
+          <p className="text-sm">
+            Produce <strong>{station.outputQuantity || 1} × {station.finalProductName}</strong> por ciclo
+          </p>
+          <p className="text-xs text-gray-500">
+            Requiere: {[
+              station.requiresWorker && 'trabajador',
+              station.requiresMachine && 'máquina',
+            ].filter(Boolean).join(' + ') || 'cualquier actor asignado'}
+          </p>
           <div className="flex flex-col gap-3">
             <div>
               <p className="text-sm font-semibold text-gray-800 mb-1">Asignaciones</p>
-              <div className="text-sm text-gray-700">
-                <p className="mb-1">Humanos: {assignedWorkers.length > 0 ? assignedWorkers.map((a: Actor) => a.name).join(', ') : '—'}</p>
-                <p>Máquinas: {assignedMachines.length > 0 ? assignedMachines.map((a: Actor) => a.name).join(', ') : '—'}</p>
+              <div className="text-sm text-gray-700 space-y-2">
+                <div>
+                  <span>Humanos: </span>
+                  {assignedWorkers.length > 0 ? assignedWorkers.map((actor: Actor) => (
+                    <button key={actor.id}
+                      onClick={() => unassignActorFromStation(actor.id, station.warehouseId, station.stationIndex)}
+                      className="mr-1 px-2 py-1 rounded bg-blue-100 text-blue-700"
+                      title="Quitar asignación">
+                      {actor.name} ×
+                    </button>
+                  )) : '—'}
+                </div>
+                <div>
+                  <span>Máquinas: </span>
+                  {assignedMachines.length > 0 ? assignedMachines.map((actor: Actor) => (
+                    <button key={actor.id}
+                      onClick={() => unassignActorFromStation(actor.id, station.warehouseId, station.stationIndex)}
+                      className="mr-1 px-2 py-1 rounded bg-purple-100 text-purple-700"
+                      title="Quitar asignación">
+                      {actor.name} ×
+                    </button>
+                  )) : '—'}
+                </div>
               </div>
               {unassignedActors.length > 0 && (
                 <div className="mt-2 flex flex-col gap-2">

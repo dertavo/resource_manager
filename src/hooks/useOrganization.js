@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import usePersistentState from './usePersistentState';
 import { generateId } from '../utils/id';
 
@@ -7,6 +8,8 @@ const useOrganization = ({
   setMessage,
   setWarehouses,
   currentTimestamp,
+  currentDay,
+  warehouses,
 }) => {
   const [company, setCompany] = usePersistentState('company', null);
   const [workforce, setWorkforce] = usePersistentState('workforce', []);
@@ -121,6 +124,20 @@ const useOrganization = ({
   const updateStationActors = (actorId, warehouseId, stationIndex, remove = false) => {
     const actor = workforce.find(item => item.id === actorId);
     if (!actor && !remove) return;
+    const assignedElsewhere = warehouses?.some(warehouse =>
+      warehouse.stations.some((station, index) =>
+        station
+        && !(warehouse.id === warehouseId && index === stationIndex)
+        && [
+          ...(station.assignedWorkerIds || []),
+          ...(station.assignedMachineIds || []),
+        ].includes(actorId)
+      )
+    );
+    if (assignedElsewhere && !remove) {
+      setMessage(`${actor.name} ya está asignado a otra estación.`);
+      return;
+    }
 
     setWarehouses(previous => previous.map(warehouse => {
       if (warehouse.id !== warehouseId) return warehouse;
@@ -148,6 +165,14 @@ const useOrganization = ({
       return { ...warehouse, stations };
     }));
   };
+
+  useEffect(() => {
+    setWorkforce(previous => previous.map(actor => ({
+      ...actor,
+      hoursWorkedToday: 0,
+      status: 'idle',
+    })));
+  }, [currentDay, setWorkforce]);
 
   const addToPersonalInventory = item => {
     if (personalInventory.length >= 4) {

@@ -5,6 +5,7 @@ import RegisterView from '../views/RegisterView';
 import StationsView from '../views/StationsView';
 import WarehousesView from '../views/WarehousesView';
 import WorkforceView from '../views/WorkforceView';
+import AutomationView from '../views/AutomationView';
 
 const AppViewRouter = ({
   view,
@@ -16,6 +17,7 @@ const AppViewRouter = ({
   shelves,
   setShelves,
   stations,
+  stationBlueprints,
   setStations,
   warehouses,
   products,
@@ -36,6 +38,8 @@ const AppViewRouter = ({
   currentDate,
   dailyBalance,
   globalBalance,
+  automationConfig,
+  automationLog,
   canSleep,
   finishDay,
   actions,
@@ -94,9 +98,12 @@ const AppViewRouter = ({
       return (
         <StationsView
           inventory={inventory}
+          blueprints={stationBlueprints}
           stations={stations}
+          company={company}
           handleStationFormSubmit={actions.handleStationFormSubmit}
           handleDeleteStation={actions.handleDeleteStation}
+          handleBuildStation={actions.handleBuildStation}
         />
       );
     case 'warehouses':
@@ -138,6 +145,15 @@ const AppViewRouter = ({
       );
     case 'workforce':
       return <WorkforceView workforce={workforce} addActor={actions.addActor} />;
+    case 'automation':
+      return (
+        <AutomationView
+          config={automationConfig}
+          setConfig={actions.setAutomationConfig}
+          log={automationLog}
+          clearLog={actions.clearAutomationLog}
+        />
+      );
     default:
       return null;
   }

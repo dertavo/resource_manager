@@ -108,7 +108,7 @@ const WarehousesView = ({
                   onClick={() => station && openStationDetailsModal(station, warehouse.id, index)}
                   className={`h-24 w-24 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center p-2 transition-colors ${station ? 'cursor-pointer' : 'hover:bg-gray-200'}`}
                   style={{
-                    backgroundColor: station ? (station.status === 'processing' ? 'rgb(254 243 199)' : station.status === 'completed' ? 'rgb(198 246 213)' : 'rgb(219 234 254)') : 'transparent',
+                    backgroundColor: station ? (station.status === 'processing' ? 'rgb(254 243 199)' : station.status === 'completed' ? 'rgb(198 246 213)' : station.status === 'waiting-shift' ? 'rgb(254 226 226)' : 'rgb(219 234 254)') : 'transparent',
                   }}
                 >
                   {station && (
@@ -128,6 +128,11 @@ const WarehousesView = ({
                         <span className="text-xs text-green-700 mt-1 flex items-center">
                           <CheckCircle size={12} className="mr-1"/>
                           Completado
+                        </span>
+                      )}
+                      {station.status === 'waiting-shift' && (
+                        <span className="text-xs text-red-700 mt-1">
+                          Esperando jornada
                         </span>
                       )}
                     </div>
