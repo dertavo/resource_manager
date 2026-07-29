@@ -1,147 +1,40 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { LayoutGrid, Factory, Box, ShoppingCart, Archive, PlusSquare, MinusSquare, Trash2, Clock, Play, CheckCircle, Package, X } from 'lucide-react';
-
-import OrganizerView from './views/OrganizerView';
-import RegisterView from './views/RegisterView';
-import BuyView from './views/BuyView';
-import StationsView from './views/StationsView';
-
-import WarehousesView from './views/WarehousesView';
+import React, { useState, useEffect } from 'react';
+import { ShoppingCart, Trash2, Clock, Play, CheckCircle, Package } from 'lucide-react';
 
 import StationDetailsModal from './views/StationDetailsModal';
-import CompanyView from './views/CompanyView';
-import WorkforceView from './views/WorkforceView';
 import PersonalPanel from './components/PersonalPanel';
+import AppNavigation from './components/AppNavigation';
+import AppViewRouter from './components/AppViewRouter';
+import CartView from './components/CartView';
+import SalePriceModal from './components/SalePriceModal';
+import useDayClock from './hooks/useDayClock';
+import useOrganization from './hooks/useOrganization';
+import useStationTimers from './hooks/useStationTimers';
+import usePersistentState, { rawStringStorage } from './hooks/usePersistentState';
+import {
+  actorsHaveHoursLeft as assignedActorsHaveHoursLeft,
+  addFinalProduct,
+  canAutoContinue as canStationAutoContinue,
+  consumeIngredients,
+  getAvailableItems as selectAvailableItems,
+  hasEnoughIngredients,
+} from './domain/inventory';
+import { generateId } from './utils/id';
 
-// Genera un ID único para cada elemento
-const generateId = () => Math.random().toString(36).substring(2, 9);
 
-
-
-// Componente modal del carrito
-const CartView = ({ cartItems, onPurchase, onClose, onUpdateCart }) => {
-  const calculateTotal = () => {
-    return cartItems.reduce((total, item) => total + ((item.displayPrice || item.price) * item.quantity), 0).toFixed(2);
-  };
-
-  const handleRemoveItem = (itemId) => {
-    onUpdateCart(cartItems.filter(item => item.id !== itemId));
-  };
-
-  const handleQuantityChange = (itemId, newQuantity) => {
-    if (newQuantity <= 0) {
-      handleRemoveItem(itemId);
-    } else {
-      const updatedCart = cartItems.map(item =>
-        item.id === itemId ? { ...item, quantity: newQuantity } : item
-      );
-      onUpdateCart(updatedCart);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 m-4 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors"
-        >
-          <X size={24} />
-        </button>
-        <h2 className="text-2xl font-bold text-center text-gray-900 mb-6">Carrito de Compras</h2>
-        {cartItems.length === 0 ? (
-          <p className="text-center text-gray-600">El carrito está vacío.</p>
-        ) : (
-          <>
-            <div className="space-y-4 max-h-80 overflow-y-auto pr-2">
-              {cartItems.map(item => (
-                <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <div className="w-6 h-6 rounded-full" style={{ backgroundColor: item.color }}></div>
-                      <h4 className="font-semibold">{item.name}</h4>
-                    </div>
-                    <p className="text-sm text-gray-600">Precio: ${(item.displayPrice || item.price).toFixed(2)}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <p className="font-bold">${((item.displayPrice || item.price) * item.quantity).toFixed(2)}</p>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                        className="px-2 py-1 bg-gray-300 hover:bg-gray-400 rounded text-sm"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
-                        className="w-10 text-center border border-gray-300 rounded text-sm"
-                      />
-                      <button
-                        onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                        className="px-2 py-1 bg-gray-300 hover:bg-gray-400 rounded text-sm"
-                      >
-                        +
-                      </button>
-                      <button
-                        onClick={() => handleRemoveItem(item.id)}
-                        className="ml-2 px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-sm"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-6 pt-4 border-t-2 border-gray-200">
-              <div className="flex justify-between items-center font-bold text-2xl mb-4">
-                <span>Total:</span>
-                <span>${calculateTotal()}</span>
-              </div>
-              <div className="flex space-x-4">
-                <button
-                  onClick={onClose}
-                  className="flex-1 py-3 bg-gray-400 text-white font-semibold rounded-lg hover:bg-gray-500 transition-colors"
-                >
-                  Seguir Comprando
-                </button>
-                <button
-                  onClick={onPurchase}
-                  className="flex-1 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition-colors"
-                >
-                  Confirmar Compra
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-};
 
 // Componente principal de la aplicación
 const App = () => {
-  // Primero declaramos currentUser porque se necesita para otras inicializaciones
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const stored = localStorage.getItem('currentUser');
-      return stored ? stored : 'store';
-    } catch {
-      return 'store';
-    }
-  });
-
-  // Ahora podemos usar currentUser para inicializar currentView
+  const [currentUser, setCurrentUser] = usePersistentState(
+    'currentUser',
+    'store',
+    rawStringStorage,
+  );
   const [currentView, setCurrentView] = useState(() => {
     const stored = localStorage.getItem('currentUser');
     return stored === 'store' ? 'register' : 'organizer';
   });
-
-    const [isDraggable, setIsDraggable] =useState(true);
+  const [isDraggable, setIsDraggable] = useState(true);
 
   // Efecto para validar que el usuario tienda no acceda a vistas restringidas
   useEffect(() => {
@@ -149,66 +42,14 @@ const App = () => {
     if (currentUser === 'store' && restrictedViews.includes(currentView)) {
       setCurrentView('register'); // Redirigir a una vista permitida
     }
-  }, [currentUser]);
+  }, [currentUser, currentView]);
 
-  // Estados para la persistencia de datos
-  const [products, setProducts] = useState(() => {
-    try {
-      const storedProducts = localStorage.getItem('products');
-      return storedProducts ? JSON.parse(storedProducts) : [];
-    } catch (error) {
-      console.error("Error al cargar productos de localStorage:", error);
-      return [];
-    }
-  });
-  const [shelves, setShelves] = useState(() => {
-    try {
-      const storedShelves = localStorage.getItem('shelves');
-      return storedShelves ? JSON.parse(storedShelves) : [];
-    } catch (error) {
-      console.error("Error al cargar estantes de localStorage:", error);
-      return [];
-    }
-  });
-  const [stations, setStations] = useState(() => {
-    try {
-      const storedStations = localStorage.getItem('stations');
-      return storedStations ? JSON.parse(storedStations) : [];
-    } catch (error) {
-      console.error("Error al cargar estaciones de localStorage:", error);
-      return [];
-    }
-  });
-  const [warehouses, setWarehouses] = useState(() => {
-    try {
-      const storedWarehouses = localStorage.getItem('warehouses');
-      return storedWarehouses ? JSON.parse(storedWarehouses) : [];
-    } catch (error) {
-      console.error("Error al cargar almacenes de localStorage:", error);
-      return [];
-    }
-  });
-
-  // Estado para el inventario global (lista plana de items)
-  const [inventory, setInventory] = useState(() => {
-    try {
-      const storedInventory = localStorage.getItem('inventory');
-      return storedInventory ? JSON.parse(storedInventory) : [];
-    } catch (error) {
-      console.error("Error al cargar inventario de localStorage:", error);
-      return [];
-    }
-  });
-
-  // Inventario independiente para usuario "store"
-  const [storeInventory, setStoreInventory] = useState(() => {
-    try {
-      const stored = localStorage.getItem('storeInventory');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [products, setProducts] = usePersistentState('products', []);
+  const [shelves, setShelves] = usePersistentState('shelves', []);
+  const [stations, setStations] = usePersistentState('stations', []);
+  const [warehouses, setWarehouses] = usePersistentState('warehouses', []);
+  const [inventory, setInventory] = usePersistentState('inventory', []);
+  const [storeInventory, setStoreInventory] = usePersistentState('storeInventory', []);
 
   // Estados para el carrito
   const [cartItems, setCartItems] = useState([]);
@@ -218,105 +59,42 @@ const App = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStation, setSelectedStation] = useState(null);
-  // Nueva empresa y fuerza laboral
-  const [company, setCompany] = useState(() => {
-    try {
-      const stored = localStorage.getItem('company');
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
+  const {
+    dailyBalance,
+    setDailyBalance,
+    globalBalance,
+    setGlobalBalance,
+    dayConfig,
+    setDayConfig,
+    currentDayTime,
+    isClockRunning,
+    setIsClockRunning,
+    currentDay,
+    finishDay,
+    canSleep,
+  } = useDayClock(setMessage);
+  const {
+    company,
+    setCompany,
+    workforce,
+    setWorkforce,
+    personalInventory,
+    createCompany,
+    addActor,
+    assignActorToStation,
+    unassignActorFromStation,
+    addToPersonalInventory,
+    removeFromPersonalInventory,
+    assignTaskToActor,
+  } = useOrganization({
+    setGlobalBalance,
+    setInventory,
+    setMessage,
+    setWarehouses,
   });
-  const [workforce, setWorkforce] = useState(() => {
-    try {
-      const stored = localStorage.getItem('workforce');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [personalInventory, setPersonalInventory] = useState(() => {
-    try {
-      const stored = localStorage.getItem('personalInventory');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [actorTasks, setActorTasks] = useState(() => {
-    try {
-      const stored = localStorage.getItem('actorTasks');
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
-  const [dailyBalance, setDailyBalance] = useState(() => {
-    try {
-      const stored = localStorage.getItem('dailyBalance');
-      return stored ? JSON.parse(stored) : { date: new Date().toISOString().split('T')[0], income: 0, expenses: 0, entries: [] };
-    } catch {
-      return { date: new Date().toISOString().split('T')[0], income: 0, expenses: 0, entries: [] };
-    }
-  });
-
-  // Balance global (todas las fuentes: ventas, compras, etc.)
-  const [globalBalance, setGlobalBalance] = useState(() => {
-    try {
-      const stored = localStorage.getItem('globalBalance');
-      return stored ? JSON.parse(stored) : { income: 0, expenses: 0, entries: [] };
-    } catch {
-      return { income: 0, expenses: 0, entries: [] };
-    }
-  });
-
-  // Configuración del día
-  const [dayConfig, setDayConfig] = useState(() => {
-    try {
-      const stored = localStorage.getItem('dayConfig');
-      return stored ? JSON.parse(stored) : { startHour: 6, endHour: 4, canSleepFromHour: 22, speedMultiplier: 60 };
-    } catch {
-      return { startHour: 6, endHour: 4, canSleepFromHour: 22, speedMultiplier: 60 };
-    }
-  });
-
-  // Tiempo actual del día (en horas decimales, ej: 6.5 = 6:30am)
-  const [currentDayTime, setCurrentDayTime] = useState(() => {
-    try {
-      const stored = localStorage.getItem('currentDayTime');
-      return stored ? parseFloat(stored) : dayConfig.startHour;
-    } catch {
-      return dayConfig.startHour;
-    }
-  });
-
-  // Estado del reloj (corriendo o pausado)
-  const [isClockRunning, setIsClockRunning] = useState(() => {
-    try {
-      const stored = localStorage.getItem('isClockRunning');
-      return stored ? JSON.parse(stored) : false;
-    } catch {
-      return false;
-    }
-  });
-
-  // Número de día actual
-  const [currentDay, setCurrentDay] = useState(() => {
-    try {
-      const stored = localStorage.getItem('currentDay');
-      return stored ? parseInt(stored) : 1;
-    } catch {
-      return 1;
-    }
-  });
-
-  const [productsForSale, setProductsForSale] = useState(() => {
-    try {
-      const stored = localStorage.getItem('productsForSale');
-      return stored ? JSON.parse(stored) : { store: [], main: [] };
-    } catch {
-      return { store: [], main: [] };
-    }
+  const [productsForSale, setProductsForSale] = usePersistentState('productsForSale', {
+    store: [],
+    main: [],
   });
   // Helpers para escoger inventario según usuario actual
   const getActiveInventory = () => currentUser === 'store' ? storeInventory : inventory;
@@ -336,415 +114,35 @@ const App = () => {
     }
   };
 
-  // Avance automático del tiempo
-  useEffect(() => {
-    if (!isClockRunning) return;
-
-    const interval = setInterval(() => {
-      setCurrentDayTime(prev => {
-        // Avanza 1 minuto in-game cada segundo real (multiplicado por speedMultiplier)
-        const increment = (1 / 60) * (dayConfig.speedMultiplier / 60);
-        let newTime = prev + increment;
-
-        // Si el tiempo actual supera las 24 horas, reinicia desde 0
-        if (newTime >= 24) {
-          newTime = newTime - 24;
-        }
-
-        // Verificar si se alcanzó la hora de fin del día
-        const { startHour, endHour } = dayConfig;
-        const reachedEndHour = endHour < startHour 
-          ? (prev < endHour && newTime >= endHour) || (prev >= startHour && newTime >= 24)
-          : (prev < endHour && newTime >= endHour);
-        
-        if (reachedEndHour) {
-          // Terminar el día automáticamente
-          setTimeout(() => {
-            finishDay();
-          }, 100);
-        }
-
-        return newTime;
-      });
-    }, 1000); // Cada segundo real
-
-    return () => clearInterval(interval);
-  }, [isClockRunning, dayConfig.speedMultiplier, dayConfig.startHour, dayConfig.endHour]);
-
-  // Función para terminar el día manualmente
-  const finishDay = () => {
-    // Transferir balance diario al global
-    const netBalance = dailyBalance.income - dailyBalance.expenses;
-    
-    setGlobalBalance(prev => ({
-      income: prev.income + dailyBalance.income,
-      expenses: prev.expenses + dailyBalance.expenses,
-      entries: [
-        ...prev.entries,
-        {
-          id: `day-${currentDay}-transfer-${Date.now()}`,
-          type: netBalance >= 0 ? 'income' : 'expense',
-          amount: Math.abs(netBalance),
-          description: `Balance del Día ${currentDay}`,
-          timestamp: new Date().toISOString()
-        }
-      ]
-    }));
-
-    // Resetear balance diario
-    setDailyBalance({
-      date: new Date().toISOString().split('T')[0],
-      income: 0,
-      expenses: 0,
-      entries: []
-    });
-
-    // Avanzar al siguiente día
-    setCurrentDay(prev => prev + 1);
-    setCurrentDayTime(dayConfig.startHour);
-    setIsClockRunning(false);
-    
-    setMessage(`Día ${currentDay} finalizado. Balance transferido al global: $${netBalance.toFixed(2)}`);
-  };
-
-  // Verificar si se puede dormir (basado en la hora actual)
-  const canSleep = () => {
-    const { canSleepFromHour, startHour, endHour } = dayConfig;
-    
-    // Si endHour < startHour, significa que el día termina al día siguiente (ej: 6am - 4am)
-    if (endHour < startHour) {
-      // Puede dormir si la hora actual está entre canSleepFromHour y 24, o entre 0 y endHour
-      return currentDayTime >= canSleepFromHour || currentDayTime <= endHour;
-    } else {
-      // Día normal: puede dormir si está entre canSleepFromHour y endHour
-      return currentDayTime >= canSleepFromHour && currentDayTime <= endHour;
-    }
-  };
-  const [isPersonalPanelVisible, setIsPersonalPanelVisible] = useState(() => {
-    try {
-      const stored = localStorage.getItem('isPersonalPanelVisible');
-      return stored ? JSON.parse(stored) : true;
-    } catch {
-      return true;
-    }
-  });
+  const [isPersonalPanelVisible, setIsPersonalPanelVisible] = usePersistentState(
+    'isPersonalPanelVisible',
+    true,
+  );
   const [priceModalItem, setPriceModalItem] = useState(null);
   const [priceInput, setPriceInput] = useState('');
 
-  // Estados para el sistema de solicitudes de productos
-  const [productRequests, setProductRequests] = useState(() => {
-    try {
-      const stored = localStorage.getItem('productRequests');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [productRequests, setProductRequests] = usePersistentState('productRequests', []);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState({});
   const [requestDestination, setRequestDestination] = useState('tienda'); // 'tienda' o 'publico'
-  const [publicSaleProducts, setPublicSaleProducts] = useState(() => {
-    try {
-      const stored = localStorage.getItem('publicSaleProducts');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Referencia para almacenar los temporizadores de las estaciones
-  const stationTimersRef = useRef({});
-
-  // Guarda los datos en localStorage cada vez que cambian
-  useEffect(() => {
-    localStorage.setItem('products', JSON.stringify(products));
-  }, [products]);
-
-  useEffect(() => {
-    localStorage.setItem('shelves', JSON.stringify(shelves));
-  }, [shelves]);
-
-  useEffect(() => {
-    localStorage.setItem('stations', JSON.stringify(stations));
-  }, [stations]);
-
-  useEffect(() => {
-    localStorage.setItem('warehouses', JSON.stringify(warehouses));
-  }, [warehouses]);
-
-  useEffect(() => {
-    localStorage.setItem('inventory', JSON.stringify(inventory));
-  }, [inventory]);
-  useEffect(() => {
-    localStorage.setItem('company', JSON.stringify(company));
-  }, [company]);
-  useEffect(() => {
-    localStorage.setItem('workforce', JSON.stringify(workforce));
-  }, [workforce]);
-  useEffect(() => {
-    localStorage.setItem('personalInventory', JSON.stringify(personalInventory));
-  }, [personalInventory]);
-  useEffect(() => {
-    localStorage.setItem('actorTasks', JSON.stringify(actorTasks));
-  }, [actorTasks]);
-  useEffect(() => {
-    localStorage.setItem('dailyBalance', JSON.stringify(dailyBalance));
-  }, [dailyBalance]);
-  useEffect(() => {
-    localStorage.setItem('currentUser', currentUser);
-  }, [currentUser]);
-  useEffect(() => {
-    localStorage.setItem('productsForSale', JSON.stringify(productsForSale));
-  }, [productsForSale]);
-  useEffect(() => {
-    localStorage.setItem('isPersonalPanelVisible', JSON.stringify(isPersonalPanelVisible));
-  }, [isPersonalPanelVisible]);
-  useEffect(() => {
-    localStorage.setItem('productRequests', JSON.stringify(productRequests));
-  }, [productRequests]);
-  useEffect(() => {
-    localStorage.setItem('publicSaleProducts', JSON.stringify(publicSaleProducts));
-  }, [publicSaleProducts]);
-
-  useEffect(() => {
-    localStorage.setItem('dayConfig', JSON.stringify(dayConfig));
-  }, [dayConfig]);
-
-  useEffect(() => {
-    localStorage.setItem('currentDayTime', currentDayTime.toString());
-  }, [currentDayTime]);
-
-  useEffect(() => {
-    localStorage.setItem('isClockRunning', JSON.stringify(isClockRunning));
-  }, [isClockRunning]);
-
-  useEffect(() => {
-    localStorage.setItem('currentDay', currentDay.toString());
-  }, [currentDay]);
-  useEffect(() => {
-    localStorage.setItem('globalBalance', JSON.stringify(globalBalance));
-  }, [globalBalance]);
-
-  // Genera los estantes iniciales si no existen
-  useEffect(() => {
-    // if (shelves.length === 0) {
-    //   // Usar una capacidad predeterminada de 3 y 3 estantes
-    //   const defaultShelves = Array.from({ length: 3 }, (_, i) => ({
-    //     id: `shelf-${i}`,
-    //     items: [],
-    //     capacity: 3,
-    //   }));
-    //   setShelves(defaultShelves);
-    // }
-  }, [shelves]);
-
-  useEffect(() =>{
-
-    
-  },[inventory]);
-
-  // Persistencia de storeInventory
-  useEffect(() => {
-    localStorage.setItem('storeInventory', JSON.stringify(storeInventory));
-  }, [storeInventory]);
-
-  // Nuevo useEffect para manejar los temporizadores de manera independiente
-  useEffect(() => {
-    warehouses.forEach(warehouse => {
-      warehouse.stations.forEach((station, stationIndex) => {
-        if (station && (station.status === 'processing' || station.status === 'stopping') && !stationTimersRef.current[station.id]) {
-          stationTimersRef.current[station.id] = setInterval(() => {
-            // Costos de labor y estados de actores (1 segundo = 1 hora simulada)
-            if (company) {
-              const assignedWorkerIds = station.assignedWorkerIds || [];
-              const assignedMachineIds = station.assignedMachineIds || [];
-              const actors = workforce.filter(a => assignedWorkerIds.includes(a.id) || assignedMachineIds.includes(a.id));
-              const hourlyTotal = actors.reduce((sum, a) => sum + (a.hourlyCost || 0), 0);
-              if (hourlyTotal > 0) {
-                setCompany(prev => {
-                  if (!prev) return prev;
-                  const entry = {
-                    id: generateId(),
-                    type: 'expense',
-                    amount: hourlyTotal,
-                    description: `Labor ${station.name}`,
-                    date: new Date().toISOString(),
-                  };
-                  return { ...prev, capital: (prev.capital || 0) - hourlyTotal, ledger: [...(prev.ledger || []), entry] };
-                });
-                // Actualizar balance diario
-                setDailyBalance(prev => {
-                  const entry = {
-                    id: generateId(),
-                    type: 'expense',
-                    amount: hourlyTotal,
-                    description: `Labor: ${station.name}`,
-                    timestamp: new Date().toISOString(),
-                  };
-                  return {
-                    ...prev,
-                    expenses: prev.expenses + hourlyTotal,
-                    entries: [...prev.entries, entry],
-                  };
-                });
-              }
-              if (actors.length > 0) {
-                setWorkforce(prev => prev.map(a => {
-                  if (assignedWorkerIds.includes(a.id)) {
-                    const fatigue = Math.min(100, (a.fatigue || 0) + 5);
-                    const hoursWorked = (a.hoursWorkedToday || 0) + 1;
-                    return { ...a, fatigue, hoursWorkedToday: hoursWorked, status: 'working' };
-                  }
-                  if (assignedMachineIds.includes(a.id)) {
-                    const maintenance = Math.min(100, (a.maintenanceNeed || 0) + 3);
-                    return { ...a, maintenanceNeed: maintenance, status: 'working' };
-                  }
-                  return a;
-                }));
-              }
-            }
-            setWarehouses(prevWarehouses => {
-              let completed = false;
-              const newWarehouses = prevWarehouses.map(w => {
-                if (w.id === warehouse.id) {
-                  const newStations = [...w.stations];
-                  if (newStations[stationIndex]) {
-                    const newTime = newStations[stationIndex].remainingTime - 1;
-                    if (newTime <= 0) {
-                      clearInterval(stationTimersRef.current[station.id]);
-                      delete stationTimersRef.current[station.id];
-                      completed = true;
-
-                      return {
-                        ...w,
-                        stations: newStations.map((s, idx) =>
-                          idx === stationIndex ? { ...s, status: s.stopRequested  ? 'stoped' : 'completed', stopRequested:false, remainingTime: 0 } : s
-                        ),
-                      };
-                    }
-                    return {
-                      ...w,
-                      stations: newStations.map((s, idx) =>
-                        idx === stationIndex ? { ...s, remainingTime: newTime } : s
-                      ),
-                    };
-                  }
-                }
-                return w;
-              });
-              if (completed) {
-                handleProcessingCycleComplete(warehouse.id, stationIndex, station.processingMode || 'once');
-              }
-              return newWarehouses;
-            });
-          }, 1000);
-        }
-      });
-    });
-
-    return () => {
-      Object.values(stationTimersRef.current).forEach(clearInterval);
-      stationTimersRef.current = {};
-    };
-  }, [warehouses, inventory, products, company, workforce]);
-
-  // Funciones principales de la aplicación
-  const getAvailableItems = () => {
-    const itemsInShelves = shelves.flatMap(s => s.items.map(item => item.uniqueId));
-
-    return inventory.filter(item => !itemsInShelves.includes(item.uniqueId));
-  };
-
-  // Cantidad disponible de un producto en inventario (suma qty)
-  const getInventoryCount = (productId, inv = inventory) =>
-    inv.reduce((sum, item) => sum + (item.productId === productId ? (item.qty || 1) : 0), 0);
+  const [publicSaleProducts, setPublicSaleProducts] = usePersistentState(
+    'publicSaleProducts',
+    [],
+  );
 
   const hasEnoughIngredientsForStation = (station, inv = inventory) =>
-    (station?.inputProductIds || []).every(pid => getInventoryCount(pid, inv) > 0);
+    hasEnoughIngredients(station, inv);
 
-  const consumeIngredientsForStation = (station, inv = inventory) => {
-    let next = [...inv];
-    (station?.inputProductIds || []).forEach(pid => {
-      const idx = next.findIndex(item => item.productId === pid && (item.qty || 1) > 0);
-      if (idx !== -1) {
-        const item = next[idx];
-        const remaining = (item.qty || 1) - 1;
-        if (remaining <= 0) {
-          next.splice(idx, 1);
-        } else {
-          next[idx] = { ...item, qty: remaining };
-        }
-      }
-    });
-    return next;
-  };
+  const consumeIngredientsForStation = (station, inv = inventory) =>
+    consumeIngredients(station, inv);
 
-  const actorsHaveHoursLeft = (station) => {
-    const assignedWorkerIds = station.assignedWorkerIds || [];
-    const assignedMachineIds = station.assignedMachineIds || [];
-    const actors = workforce.filter(a => assignedWorkerIds.includes(a.id) || assignedMachineIds.includes(a.id));
-    if (actors.length === 0) return false;
-    return actors.every(a => (a.hoursPerDay || 0) - (a.hoursWorkedToday || 0) > 0);
-  };
+  const canAutoContinue = (station, inv = inventory) =>
+    canStationAutoContinue(station, inv, workforce);
 
-  const canAutoContinue = (station, inv = inventory) => {
-    if (!station) return false;
-    const hasAssignedActors = ((station.assignedWorkerIds && station.assignedWorkerIds.length > 0) || (station.assignedMachineIds && station.assignedMachineIds.length > 0));
-    if (!hasAssignedActors) return false;
-    if (!hasEnoughIngredientsForStation(station, inv)) return false;
-    if (station.processingMode === 'shift') {
-      return actorsHaveHoursLeft(station);
-    }
-    if (station.processingMode === 'stock') {
-      return true;
-    }
-    return false;
-  };
+  const addFinalProductToInventory = (station, baseInventory = inventory) =>
+    addFinalProduct(station, baseInventory);
 
-  const addFinalProductToInventory = (station, baseInventory = inventory) => {
-    const productId = station.finalProductId || station.id; // fallback stable id per station
-    const color = station.finalProductColor || `hsl(${Math.random() * 360}, 70%, 80%)`;
-    const next = [...baseInventory];
-    const idx = next.findIndex(item => item.productId === productId);
-    if (idx !== -1) {
-      const item = next[idx];
-      next[idx] = { ...item, qty: (item.qty || 1) + 1 };
-      return next;
-    }
-    return [...next, {
-      uniqueId: `${productId}-${generateId()}`,
-      productId,
-      name: station.finalProductName,
-      color,
-      qty: 1,
-    }];
-  };
-
-  const getInventorySummary = () => {
-    const availableItems = getAvailableItems();
-
-    return availableItems;
-   
-    const summary = availableItems.reduce((acc, item) => {
-      //console.log(item)
-      const existing = acc.find(s => s.productId === item.productId);
-      if (existing) {
-        //existing.count += 1;
-      } else {
-        acc.push({
-          productId: item.productId,
-          name: item.name,
-          color: item.color,
-          capacity : item.capacity,
-          qty : item.quantity
-        });
-      }
-      return acc;
-    }, []);
-    
-    return summary;
-  
-  };
+  const getInventorySummary = () => selectAvailableItems(inventory, shelves);
 
   const handleDragStart = (e, item, type, uniqueId = null) => {
 
@@ -761,28 +159,6 @@ setDraggedItem({ ...item, type, uniqueId });
 //console.log(item);
 e.dataTransfer.effectAllowed = 'move';
   };
-
-  // Drag handlers for personal inventory
-  const handleDropToPersonalInventory = (e) => {
-    e.preventDefault();
-    if (!draggedItem || draggedItem.type !== 'grouped-inventory') return;
-
-    const itemInInventory = inventory.find(i => i.productId === draggedItem.productId);
-    if (!itemInInventory) return;
-
-    if (personalInventory.length >= 4) {
-      setMessage('Tu inventario personal está lleno (máx 4 items).');
-      setDraggedItem(null);
-      return;
-    }
-
-    // Remove from main inventory
-    setInventory(prev => prev.filter(i => i.productId !== draggedItem.productId));
-    // Add to personal inventory
-    addToPersonalInventory(itemInInventory);
-    setDraggedItem(null);
-  };
-
 
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -991,13 +367,11 @@ const handleDropToInventory = (e) => {
     }
     setWarehouses(prevWarehouses => {
         let updatedWarehouses = [...prevWarehouses];
-        let stationMoved = false;
         updatedWarehouses = updatedWarehouses.map(w => {
             const prevStationIndex = w.stations.findIndex(s => s?.id === stationId);
             if (prevStationIndex !== -1) {
                 const newStations = [...w.stations];
                 newStations[prevStationIndex] = null;
-                stationMoved = true;
                 return { ...w, stations: newStations };
             }
             return w;
@@ -1238,7 +612,7 @@ const handleDropToInventory = (e) => {
         setMessage('¡Inventario insuficiente! No se puede iniciar la producción.');
         return;
       }
-      if (processingMode === 'shift' && !actorsHaveHoursLeft(station)) {
+      if (processingMode === 'shift' && !assignedActorsHaveHoursLeft(station, workforce)) {
         setMessage('La jornada asignada ya está completa para este equipo.');
         return;
       }
@@ -1270,110 +644,6 @@ const handleDropToInventory = (e) => {
         return w;
       })
     );
-  };
-
-  // Empresa: creación y ledger
-  const createCompany = ({ name, startWithDebt, amount }) => {
-    const base = { name, capital: 0, debt: 0, ledger: [] };
-    let next = base;
-    if (startWithDebt && amount > 0) {
-      next = {
-        ...base,
-        debt: amount,
-        capital: amount,
-        ledger: [{ id: generateId(), type: 'debt', amount, description: 'Aportación inicial (deuda bancaria)', date: new Date().toISOString() }],
-      };
-
-          // Agregar dinero al ingreso global del usuario que envió los productos
-    setGlobalBalance(prev => ({
-      ...prev,
-      income: prev.income + amount,
-      entries: [...prev.entries, {
-        id: generateId(),
-        type: 'income',
-        amount: amount,
-        description: `Ingreso a la empresa "${name}" (deuda bancaria)`,
-        timestamp: new Date().toISOString()
-      }]
-    }));
-    }
-    setCompany(next);
-    setMessage('Empresa creada correctamente.');
-  };
-
-  // Fuerza laboral: crear actor humano/máquina
-  const addActor = ({ type, name, hourlyCost, hoursPerDay }) => {
-    const actor = { id: generateId(), type, name, hourlyCost, hoursPerDay, fatigue: 0, maintenanceNeed: 0, status: 'idle', hoursWorkedToday: 0 };
-    setWorkforce(prev => [...prev, actor]);
-    setMessage(`${type === 'human' ? 'Humano' : 'Máquina'} "${name}" registrado.`);
-  };
-
-  // Asignación a estación
-  const assignActorToStation = (actorId, warehouseId, stationIndex) => {
-    const actor = workforce.find(a => a.id === actorId);
-    if (!actor) return;
-    setWarehouses(prev => prev.map(w => {
-      if (w.id !== warehouseId) return w;
-      const newStations = [...w.stations];
-      const st = newStations[stationIndex];
-      if (!st) return w;
-      const isHuman = actor.type === 'human';
-      const workerIds = st.assignedWorkerIds || [];
-      const machineIds = st.assignedMachineIds || [];
-      const nextStation = {
-        ...st,
-        assignedWorkerIds: isHuman ? Array.from(new Set([...workerIds, actor.id])) : workerIds,
-        assignedMachineIds: !isHuman ? Array.from(new Set([...machineIds, actor.id])) : machineIds,
-      };
-      newStations[stationIndex] = nextStation;
-      return { ...w, stations: newStations };
-    }));
-  };
-
-  const unassignActorFromStation = (actorId, warehouseId, stationIndex) => {
-    setWarehouses(prev => prev.map(w => {
-      if (w.id !== warehouseId) return w;
-      const newStations = [...w.stations];
-      const st = newStations[stationIndex];
-      if (!st) return w;
-      newStations[stationIndex] = {
-        ...st,
-        assignedWorkerIds: (st.assignedWorkerIds || []).filter(id => id !== actorId),
-        assignedMachineIds: (st.assignedMachineIds || []).filter(id => id !== actorId),
-      };
-      return { ...w, stations: newStations };
-    }));
-  };
-
-  // Inventario personal: agregar/remover items (máx 4)
-  const addToPersonalInventory = (item) => {
-    if (personalInventory.length >= 4) {
-      setMessage('Tu inventario personal está lleno (máx 4 items).');
-      return;
-    }
-    setPersonalInventory(prev => [...prev, item]);
-    setMessage(`"${item.name}" añadido a tu inventario personal.`);
-  };
-
-  const removeFromPersonalInventory = (uniqueId) => {
-    const item = personalInventory.find(i => i.uniqueId === uniqueId);
-    setPersonalInventory(prev => prev.filter(i => i.uniqueId !== uniqueId));
-    if (item) {
-      setInventory(prev => [...prev, item]);
-      setMessage(`"${item.name}" devuelto al inventario general.`);
-    }
-  };
-
-  // Asignar tarea a un actor (estación + duración en horas)
-  const assignTaskToActor = (actorId, warehouseId, stationIndex, durationHours) => {
-    const actor = workforce.find(a => a.id === actorId);
-    if (!actor) return;
-    const key = actorId;
-    setActorTasks(prev => ({
-      ...prev,
-      [key]: { actorId, warehouseId, stationIndex, durationHours, hoursWorked: 0, status: 'idle' },
-    }));
-    setMessage(`Tarea asignada a ${actor.name}: estación (${durationHours} horas).`);
   };
 
   // Remover producto de venta pública y devolverlo al inventario
@@ -1886,129 +1156,18 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
   setMessage('Producto final movido al inventario con éxito.');
 };
 
-
-
-  // Componente de navegación
-  const NavButton = ({ view, icon: Icon, label }) => (
-    <button
-      onClick={() => {
-        setCurrentView(view);
-        setMessage('');
-      }}
-      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-        currentView === view ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-200'
-      }`}
-    >
-      <Icon size={20} />
-      <span>{label}</span>
-    </button>
-  );
-
-  const renderView = () => {
-    switch (currentView) {
-      case 'organizer':
-        // Mostrar inventario correcto según el usuario
-        const currentInventory = currentUser === 'store' ? storeInventory : inventory;
-        const setCurrentInventory = currentUser === 'store' ? setStoreInventory : setInventory;
-        
-        return (
-          <OrganizerView
-            shelves={shelves}
-            inventorySummary={getInventorySummary()}
-            inventory={currentInventory}
-            setShelves={setShelves}
-            setInventory={setCurrentInventory}
-            handleDragStart={handleDragStart}
-            handleDragOver={handleDragOver}
-            handleDragLeave={handleDragLeave}
-            handleDrop={handleDrop}
-            handleDropToInventory={handleDropToInventory}
-            handleDropToTrash={handleDropToTrash}
-            setMessage={setMessage}
-            setDraggedItem={setDraggedItem}
-            draggedItem={draggedItem}
-            isDraggable = {isDraggable}
-            moveItemToSale={moveItemToSale}
-            currentUser={currentUser}
-            openRequestModal={openRequestModal}
-          />
-        );
-      case 'register':
-        return currentUser === 'store' ? <RegisterView handleProductFormSubmit={handleProductFormSubmit} /> : (
-          <div className="w-full max-w-5xl p-6 bg-white rounded-lg shadow-md text-center">
-            <p className="text-lg text-gray-700">Esta función solo está disponible para el Usuario Tienda.</p>
-          </div>
-        );
-      case 'buy':
-        // La tienda muestra todos los productos para ambos usuarios
-        return (
-          <BuyView
-            products={products}
-            setProducts={setProducts}
-            handleAddToCartAll={handleAddToCartAll}
-            stations={stations}
-            cartItems={cartItems}
-            setIsCartOpen={setIsCartOpen}
-            productsForSale={productsForSale}
-            publicSaleProducts={publicSaleProducts}
-            currentUser={currentUser}
-            removeItemFromSale={removeItemFromSale}
-            warehouses={warehouses}
-          />
-        );
-      case 'stations':
-        // Mostrar todos los productos para ambos usuarios
-        return (
-          <StationsView
-            inventory={inventory}
-            stations={stations}
-            handleStationFormSubmit={handleStationFormSubmit}
-            handleDeleteStation={handleDeleteStation}
-          />
-        );
-      case 'warehouses':
-        return (
-          <WarehousesView
-            warehouses={warehouses}
-            stations={stations}
-            setStations={setStations}
-            handleWarehouseFormSubmit={handleWarehouseFormSubmit}
-            handleDragStart={handleDragStart}
-            handleDragOver={handleDragOver}
-            handleDragLeave={handleDragLeave}
-            handleStationDrop={handleStationDrop}
-            handleDropToAvailableStations={handleDropToAvailableStations}
-            openStationDetailsModal={openStationDetailsModal}
-            draggedItem={draggedItem}
-            setMessage={setMessage}
-          />
-        );
-      case 'company':
-        const canSleepNow = canSleep();
-        return (
-          <CompanyView 
-            company={company} 
-            createCompany={createCompany}
-            dayConfig={dayConfig}
-            setDayConfig={setDayConfig}
-            currentDayTime={currentDayTime}
-            isClockRunning={isClockRunning}
-            setIsClockRunning={setIsClockRunning}
-            currentDay={currentDay}
-            canSleep={canSleepNow}
-            finishDay={finishDay}
-            dailyBalance={dailyBalance}
-            globalBalance={globalBalance}
-          />
-        );
-      case 'workforce':
-        return (
-          <WorkforceView workforce={workforce} addActor={addActor} />
-        );
-      default:
-        return null;
-    }
-  };
+  useStationTimers({
+    warehouses,
+    inventory,
+    products,
+    company,
+    workforce,
+    setCompany,
+    setDailyBalance,
+    setWarehouses,
+    setWorkforce,
+    onCycleComplete: handleProcessingCycleComplete,
+  });
 
   return (
     <>
@@ -2063,22 +1222,14 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
         </div> */}
       </header>
 
-      <div className="flex justify-center space-x-2 mb-8">
-        {currentUser === 'main' && (
-          <>
-            <NavButton view="organizer" icon={LayoutGrid} label="Organizador" />
-            <NavButton view="stations" icon={Factory} label="Estaciones" />
-            <NavButton view="warehouses" icon={Archive} label="Almacenes" />
-            <NavButton view="company" icon={Archive} label="Empresa" />
-            <NavButton view="workforce" icon={Archive} label="Fuerza Laboral" />
-          </>
-        )}
-        {currentUser === 'store' && (
-          <NavButton view="organizer" icon={LayoutGrid} label="Organizador" />
-        )}
-        <NavButton view="register" icon={Box} label="Productos" />
-        <NavButton view="buy" icon={ShoppingCart} label="Tienda" />
-      </div>
+      <AppNavigation
+        currentUser={currentUser}
+        currentView={currentView}
+        onNavigate={view => {
+          setCurrentView(view);
+          setMessage('');
+        }}
+      />
 
       {message && (
         <div className="w-full max-w-5xl bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-4 transition-opacity duration-300" role="alert">
@@ -2086,55 +1237,74 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
         </div>
       )}
 
-      {renderView()}
+      <AppViewRouter
+        view={currentView}
+        currentUser={currentUser}
+        inventory={inventory}
+        storeInventory={storeInventory}
+        setInventory={setInventory}
+        setStoreInventory={setStoreInventory}
+        shelves={shelves}
+        setShelves={setShelves}
+        stations={stations}
+        setStations={setStations}
+        warehouses={warehouses}
+        products={products}
+        setProducts={setProducts}
+        productsForSale={productsForSale}
+        publicSaleProducts={publicSaleProducts}
+        cartItems={cartItems}
+        draggedItem={draggedItem}
+        isDraggable={isDraggable}
+        company={company}
+        workforce={workforce}
+        dayConfig={dayConfig}
+        setDayConfig={setDayConfig}
+        currentDayTime={currentDayTime}
+        isClockRunning={isClockRunning}
+        setIsClockRunning={setIsClockRunning}
+        currentDay={currentDay}
+        dailyBalance={dailyBalance}
+        globalBalance={globalBalance}
+        canSleep={canSleep}
+        finishDay={finishDay}
+        actions={{
+          getInventorySummary,
+          handleDragStart,
+          handleDragOver,
+          handleDragLeave,
+          handleDrop,
+          handleDropToInventory,
+          handleDropToTrash,
+          setMessage,
+          setDraggedItem,
+          moveItemToSale,
+          openRequestModal,
+          handleProductFormSubmit,
+          handleAddToCartAll,
+          setIsCartOpen,
+          removeItemFromSale,
+          handleStationFormSubmit,
+          handleDeleteStation,
+          handleWarehouseFormSubmit,
+          handleStationDrop,
+          handleDropToAvailableStations,
+          openStationDetailsModal,
+          createCompany,
+          addActor,
+        }}
+      />
 
-      {/* Modal para ingresar precio de venta */}
-      {priceModalItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
-            <h3 className="text-2xl font-bold mb-4 text-gray-800">Establecer Precio de Venta</h3>
-            
-            <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-sm text-gray-600">Producto</p>
-              <p className="text-lg font-semibold text-gray-800">{priceModalItem.name}</p>
-              <p className="text-sm text-gray-600 mt-2">Cantidad disponible</p>
-              <p className="text-lg font-bold text-indigo-600">{priceModalItem.qty} unidades</p>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Precio por unidad ($)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={priceInput}
-                onChange={(e) => setPriceInput(e.target.value)}
-                placeholder="0.00"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                autoFocus
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setPriceModalItem(null);
-                  setPriceInput('');
-                }}
-                className="flex-1 px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors font-semibold"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmMoveItemToSale}
-                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold"
-              >
-                Confirmar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SalePriceModal
+        item={priceModalItem}
+        price={priceInput}
+        onPriceChange={setPriceInput}
+        onCancel={() => {
+          setPriceModalItem(null);
+          setPriceInput('');
+        }}
+        onConfirm={confirmMoveItemToSale}
+      />
 
       {/* Modal para solicitud de productos */}
       {isRequestModalOpen && (
