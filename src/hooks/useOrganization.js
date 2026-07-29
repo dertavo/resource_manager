@@ -6,6 +6,7 @@ const useOrganization = ({
   setInventory,
   setMessage,
   setWarehouses,
+  currentTimestamp,
 }) => {
   const [company, setCompany] = usePersistentState('company', null);
   const [workforce, setWorkforce] = usePersistentState('workforce', []);
@@ -16,6 +17,10 @@ const useOrganization = ({
   const [, setActorTasks] = usePersistentState('actorTasks', {});
 
   const createCompany = ({ name, startWithDebt, amount }) => {
+    if (company) {
+      setMessage('Elimina la empresa actual antes de crear una nueva.');
+      return;
+    }
     const baseCompany = { name, capital: 0, debt: 0, ledger: [] };
     let nextCompany = baseCompany;
 
@@ -29,7 +34,7 @@ const useOrganization = ({
           type: 'debt',
           amount,
           description: 'Aportación inicial (deuda bancaria)',
-          date: new Date().toISOString(),
+          date: currentTimestamp,
         }],
       };
       setGlobalBalance(previous => ({
@@ -42,7 +47,7 @@ const useOrganization = ({
             type: 'income',
             amount,
             description: `Ingreso a la empresa "${name}" (deuda bancaria)`,
-            timestamp: new Date().toISOString(),
+            timestamp: currentTimestamp,
           },
         ],
       }));
@@ -50,6 +55,49 @@ const useOrganization = ({
 
     setCompany(nextCompany);
     setMessage('Empresa creada correctamente.');
+  };
+
+  const updateCompany = ({ name, capital, debt }) => {
+    if (!company || !name.trim()) return;
+    const nextCapital = Math.max(0, Number(capital) || 0);
+    const nextDebt = Math.max(0, Number(debt) || 0);
+    const capitalDifference = nextCapital - company.capital;
+    const debtDifference = nextDebt - company.debt;
+    const adjustmentEntries = [];
+
+    if (capitalDifference !== 0) {
+      adjustmentEntries.push({
+        id: generateId(),
+        type: capitalDifference > 0 ? 'income' : 'expense',
+        amount: Math.abs(capitalDifference),
+        description: 'Ajuste manual de capital',
+        date: currentTimestamp,
+      });
+    }
+    if (debtDifference !== 0) {
+      adjustmentEntries.push({
+        id: generateId(),
+        type: debtDifference > 0 ? 'debt' : 'repayment',
+        amount: Math.abs(debtDifference),
+        description: 'Ajuste manual de deuda',
+        date: currentTimestamp,
+      });
+    }
+
+    setCompany(previous => ({
+      ...previous,
+      name: name.trim(),
+      capital: nextCapital,
+      debt: nextDebt,
+      ledger: [...(previous.ledger || []), ...adjustmentEntries],
+    }));
+    setMessage('Empresa actualizada correctamente.');
+  };
+
+  const deleteCompany = () => {
+    if (!company) return;
+    setCompany(null);
+    setMessage(`Empresa "${company.name}" eliminada. Ya puedes crear una nueva.`);
   };
 
   const addActor = ({ type, name, hourlyCost, hoursPerDay }) => {
@@ -146,6 +194,8 @@ const useOrganization = ({
     setWorkforce,
     personalInventory,
     createCompany,
+    updateCompany,
+    deleteCompany,
     addActor,
     assignActorToStation: (actorId, warehouseId, stationIndex) =>
       updateStationActors(actorId, warehouseId, stationIndex),

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Trash2, Clock, Play, CheckCircle, Package } from 'lucide-react';
+import { Moon, ShoppingCart, Sun } from 'lucide-react';
 
 import StationDetailsModal from './views/StationDetailsModal';
 import PersonalPanel from './components/PersonalPanel';
@@ -10,6 +10,7 @@ import SalePriceModal from './components/SalePriceModal';
 import useDayClock from './hooks/useDayClock';
 import useOrganization from './hooks/useOrganization';
 import useStationTimers from './hooks/useStationTimers';
+import useTheme from './hooks/useTheme';
 import usePersistentState, { rawStringStorage } from './hooks/usePersistentState';
 import {
   actorsHaveHoursLeft as assignedActorsHaveHoursLeft,
@@ -25,6 +26,7 @@ import { generateId } from './utils/id';
 
 // Componente principal de la aplicación
 const App = () => {
+  const { isDark, toggleTheme } = useTheme();
   const [currentUser, setCurrentUser] = usePersistentState(
     'currentUser',
     'store',
@@ -70,6 +72,8 @@ const App = () => {
     isClockRunning,
     setIsClockRunning,
     currentDay,
+    currentDate,
+    currentTimestamp,
     finishDay,
     canSleep,
   } = useDayClock(setMessage);
@@ -80,6 +84,8 @@ const App = () => {
     setWorkforce,
     personalInventory,
     createCompany,
+    updateCompany,
+    deleteCompany,
     addActor,
     assignActorToStation,
     unassignActorFromStation,
@@ -91,6 +97,7 @@ const App = () => {
     setInventory,
     setMessage,
     setWarehouses,
+    currentTimestamp,
   });
   const [productsForSale, setProductsForSale] = usePersistentState('productsForSale', {
     store: [],
@@ -1167,6 +1174,7 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
     setWarehouses,
     setWorkforce,
     onCycleComplete: handleProcessingCycleComplete,
+    currentTimestamp,
   });
 
   return (
@@ -1215,6 +1223,15 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
               <span className="text-gray-700">Principal</span>
             </label>
           </div>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 transition-colors"
+            title={isDark ? 'Usar modo claro' : 'Usar modo oscuro'}
+            aria-label={isDark ? 'Usar modo claro' : 'Usar modo oscuro'}
+          >
+            {isDark ? <Sun size={19} /> : <Moon size={19} />}
+          </button>
         </div>
         {/* <div>
           <h1 className="text-4xl font-bold text-gray-900 text-shadow">SGI {currentUser === 'store' ? '(Tienda)' : '(Principal)'}</h1>
@@ -1264,6 +1281,7 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
         isClockRunning={isClockRunning}
         setIsClockRunning={setIsClockRunning}
         currentDay={currentDay}
+        currentDate={currentDate}
         dailyBalance={dailyBalance}
         globalBalance={globalBalance}
         canSleep={canSleep}
@@ -1291,6 +1309,8 @@ const handleMoveFinalProductToInventory = (warehouseId, stationIndex) => {
           handleDropToAvailableStations,
           openStationDetailsModal,
           createCompany,
+          updateCompany,
+          deleteCompany,
           addActor,
         }}
       />

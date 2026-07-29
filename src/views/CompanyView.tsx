@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Wallet, FileText, PlusCircle, Clock, Play, Pause, Moon, Settings } from 'lucide-react';
+import { Building2, FileText, PlusCircle, Clock, Play, Pause, Moon, Settings, Pencil, Save, Trash2, X } from 'lucide-react';
 
 interface LedgerEntry {
   id: string;
@@ -38,10 +38,13 @@ const CompanyView = ({
   isClockRunning,
   setIsClockRunning,
   currentDay,
+  currentDate,
   canSleep,
   finishDay,
   dailyBalance,
-  globalBalance
+  globalBalance,
+  updateCompany,
+  deleteCompany,
 }: { 
   company: Company | null; 
   createCompany: (p: { name: string; startWithDebt: boolean; amount: number }) => void;
@@ -51,15 +54,22 @@ const CompanyView = ({
   isClockRunning: boolean;
   setIsClockRunning: (running: boolean) => void;
   currentDay: number;
+  currentDate: string;
   canSleep: boolean;
   finishDay: () => void;
   dailyBalance: Balance;
   globalBalance: Balance;
+  updateCompany: (p: { name: string; capital: number; debt: number }) => void;
+  deleteCompany: () => void;
 }) => {
   const [name, setName] = useState('');
   const [startWithDebt, setStartWithDebt] = useState(false);
   const [amount, setAmount] = useState(0);
   const [showClockConfig, setShowClockConfig] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editCapital, setEditCapital] = useState(0);
+  const [editDebt, setEditDebt] = useState(0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,6 +78,24 @@ const CompanyView = ({
   };
 
   const [openDates, setOpenDates] = useState<Record<string, boolean>>({});
+
+  const beginEditing = () => {
+    if (!company) return;
+    setEditName(company.name);
+    setEditCapital(company.capital);
+    setEditDebt(company.debt);
+    setIsEditing(true);
+  };
+
+  const saveCompany = () => {
+    if (!editName.trim()) return;
+    updateCompany({
+      name: editName,
+      capital: editCapital,
+      debt: editDebt,
+    });
+    setIsEditing(false);
+  };
 
   const toggleDate = (date: string) => {
     setOpenDates(prev => ({
@@ -117,7 +145,9 @@ const CompanyView = ({
             <Clock size={32} />
             <div>
               <h2 className="text-3xl font-bold">Día {currentDay}</h2>
-              <p className="text-lg">{formatTime(currentDayTime)}</p>
+              <p className="text-lg">
+                {new Date(`${currentDate}T12:00:00`).toLocaleDateString()} · {formatTime(currentDayTime)}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -220,11 +250,58 @@ const CompanyView = ({
           <Building2 className="mr-2 text-indigo-600" /> Empresa
         </h2>
         {company ? (
-          <div className="space-y-2 text-gray-700">
-            <p><strong>Nombre:</strong> {company.name}</p>
-            <p><strong>Capital:</strong> ${company.capital.toFixed(2)}</p>
-            <p><strong>Deuda:</strong> ${company.debt.toFixed(2)}</p>
-          </div>
+          isEditing ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Nombre</label>
+                <input className="w-full border p-2 rounded" value={editName} onChange={e => setEditName(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Capital</label>
+                  <input type="number" min={0} className="w-full border p-2 rounded" value={editCapital} onChange={e => setEditCapital(Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Deuda</label>
+                  <input type="number" min={0} className="w-full border p-2 rounded" value={editDebt} onChange={e => setEditDebt(Number(e.target.value))} />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-200 text-gray-800 rounded p-2 flex items-center justify-center gap-2">
+                  <X size={17} /> Cancelar
+                </button>
+                <button onClick={saveCompany} className="flex-1 bg-indigo-600 text-white rounded p-2 flex items-center justify-center gap-2">
+                  <Save size={17} /> Guardar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 text-gray-700">
+              <div className="space-y-2">
+                <p><strong>Nombre:</strong> {company.name}</p>
+                <p><strong>Capital:</strong> ${company.capital.toFixed(2)}</p>
+                <p><strong>Deuda:</strong> ${company.debt.toFixed(2)}</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={beginEditing} className="flex-1 bg-indigo-100 text-indigo-700 rounded p-2 flex items-center justify-center gap-2 hover:bg-indigo-200">
+                  <Pencil size={17} /> Editar
+                </button>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`¿Eliminar la empresa "${company.name}" y su ledger?`)) {
+                      deleteCompany();
+                    }
+                  }}
+                  className="flex-1 bg-red-100 text-red-700 rounded p-2 flex items-center justify-center gap-2 hover:bg-red-200"
+                >
+                  <Trash2 size={17} /> Eliminar
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Para crear otra empresa primero debes eliminar la actual.
+              </p>
+            </div>
+          )
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -265,7 +342,7 @@ const CompanyView = ({
           className="w-full flex justify-between items-center px-3 py-2 bg-gray-100 hover:bg-gray-200 text-sm font-semibold"
         >
           <span>
-            {new Date(date).toLocaleDateString()}
+            {new Date(`${date}T12:00:00`).toLocaleDateString()}
           </span>
           <span>
             {openDates[date] ? "−" : "+"}

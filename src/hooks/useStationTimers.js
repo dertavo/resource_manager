@@ -12,13 +12,19 @@ const useStationTimers = ({
   setWarehouses,
   setWorkforce,
   onCycleComplete,
+  currentTimestamp,
 }) => {
   const timers = useRef({});
   const cycleCompleteHandler = useRef(onCycleComplete);
+  const timestamp = useRef(currentTimestamp);
 
   useEffect(() => {
     cycleCompleteHandler.current = onCycleComplete;
   }, [onCycleComplete]);
+
+  useEffect(() => {
+    timestamp.current = currentTimestamp;
+  }, [currentTimestamp]);
 
   useEffect(() => {
     warehouses.forEach(warehouse => {
@@ -47,7 +53,7 @@ const useStationTimers = ({
                   type: 'expense',
                   amount: hourlyCost,
                   description: `Labor ${station.name}`,
-                  date: new Date().toISOString(),
+                  date: timestamp.current,
                 };
                 return {
                   ...previous,
@@ -65,7 +71,7 @@ const useStationTimers = ({
                     type: 'expense',
                     amount: hourlyCost,
                     description: `Labor: ${station.name}`,
-                    timestamp: new Date().toISOString(),
+                    timestamp: timestamp.current,
                   },
                 ],
               }));

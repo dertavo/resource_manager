@@ -33,6 +33,7 @@ const AppViewRouter = ({
   isClockRunning,
   setIsClockRunning,
   currentDay,
+  currentDate,
   dailyBalance,
   globalBalance,
   canSleep,
@@ -126,10 +127,13 @@ const AppViewRouter = ({
           isClockRunning={isClockRunning}
           setIsClockRunning={setIsClockRunning}
           currentDay={currentDay}
+          currentDate={currentDate}
           canSleep={canSleep()}
           finishDay={finishDay}
           dailyBalance={dailyBalance}
           globalBalance={globalBalance}
+          updateCompany={actions.updateCompany}
+          deleteCompany={actions.deleteCompany}
         />
       );
     case 'workforce':

@@ -1,17 +1,32 @@
 import { useCallback, useEffect } from 'react';
 import usePersistentState, { numberStorage } from './usePersistentState';
+import {
+  addDaysToDateKey,
+  createSimulationTimestamp,
+  toLocalDateKey,
+} from '../utils/simulationDate';
 
-const createDailyBalance = () => ({
-  date: new Date().toISOString().split('T')[0],
+const createDailyBalance = date => ({
+  date,
   income: 0,
   expenses: 0,
   entries: [],
 });
 
 const useDayClock = (setMessage) => {
+  const [simulationStartDate] = usePersistentState(
+    'simulationStartDate',
+    toLocalDateKey,
+  );
+  const [currentDay, setCurrentDay] = usePersistentState(
+    'currentDay',
+    1,
+    numberStorage,
+  );
+  const currentDate = addDaysToDateKey(simulationStartDate, currentDay - 1);
   const [dailyBalance, setDailyBalance] = usePersistentState(
     'dailyBalance',
-    createDailyBalance,
+    () => createDailyBalance(currentDate),
   );
   const [globalBalance, setGlobalBalance] = usePersistentState('globalBalance', {
     income: 0,
@@ -33,11 +48,13 @@ const useDayClock = (setMessage) => {
     'isClockRunning',
     false,
   );
-  const [currentDay, setCurrentDay] = usePersistentState(
-    'currentDay',
-    1,
-    numberStorage,
-  );
+  const currentTimestamp = createSimulationTimestamp(currentDate, currentDayTime);
+
+  useEffect(() => {
+    setDailyBalance(previous =>
+      previous.date === currentDate ? previous : { ...previous, date: currentDate }
+    );
+  }, [currentDate, setDailyBalance]);
 
   const finishDay = useCallback(() => {
     const netBalance = dailyBalance.income - dailyBalance.expenses;
@@ -52,11 +69,12 @@ const useDayClock = (setMessage) => {
           type: netBalance >= 0 ? 'income' : 'expense',
           amount: Math.abs(netBalance),
           description: `Balance del Día ${currentDay}`,
-          timestamp: new Date().toISOString(),
+          timestamp: currentTimestamp,
         },
       ],
     }));
-    setDailyBalance(createDailyBalance());
+    const nextDate = addDaysToDateKey(currentDate, 1);
+    setDailyBalance(createDailyBalance(nextDate));
     setCurrentDay(previous => previous + 1);
     setCurrentDayTime(dayConfig.startHour);
     setIsClockRunning(false);
@@ -65,6 +83,8 @@ const useDayClock = (setMessage) => {
     );
   }, [
     currentDay,
+    currentDate,
+    currentTimestamp,
     dailyBalance,
     dayConfig.startHour,
     setCurrentDay,
@@ -120,6 +140,8 @@ const useDayClock = (setMessage) => {
     isClockRunning,
     setIsClockRunning,
     currentDay,
+    currentDate,
+    currentTimestamp,
     finishDay,
     canSleep,
   };
